@@ -10,23 +10,43 @@ st.set_page_config(
 
 # ----------------- LLM HELPER -----------------
 def call_llm(prompt: str) -> str:
-    """Call OpenAI Responses API and return text."""
-    api_key = st.secrets.get("OPENAI_API_KEY", None)
-    if not api_key:
-        return "⚠️ No API key found. Please add OPENAI_API_KEY in Streamlit secrets."
-
+    """
+    Helper to call OpenAI Responses API and safely extract plain text output.
+    """
     try:
-        client = OpenAI(api_key=api_key)
-
         response = client.responses.create(
-            model="gpt-5-nano",   # free/test model
+            model="gpt-4.1-mini",          # or gpt-4.1 if you want
             input=prompt,
+            max_output_tokens=800,        # safe upper limit
         )
 
-        return response.output[0].content[0].text
+        # ---- Safely extract the output text ----
+        # response.output is a list of "message" items
+        output_items = getattr(response, "output", None)
+
+        if not output_items or len(output_items) == 0:
+            # Fallback: return the raw response as text if structure is unexpected
+            return str(response)
+
+        first_item = output_items[0]
+        content_list = getattr(first_item, "content", None)
+
+        if not content_list or len(content_list) == 0:
+            return str(response)
+
+        first_content = content_list[0]
+
+        # For normal text responses, type == "output_text"
+        text = getattr(first_content, "text", None)
+        if text is None:
+            return str(response)
+
+        return text
 
     except Exception as e:
-        return f"⚠️ Error calling OpenAI API: {e}"
+        st.error(f"Error calling OpenAI API: {e}")
+        return ""
+
 
 
 
