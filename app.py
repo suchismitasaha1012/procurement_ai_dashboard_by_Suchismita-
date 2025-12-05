@@ -14,7 +14,7 @@ def call_llm(prompt: str, temperature: float = 0.2):
     if OPENAI_API_KEY is None:
         return "⚠️ No API key found. Add OPENAI_API_KEY to Streamlit secrets."
     response = client.responses.create(
-        model="gpt-5.1-mini",  # or any available model
+        model="gpt-4.1-mini",   # a real, supported model
         input=prompt,
     )
     return response.output[0].content[0].text
