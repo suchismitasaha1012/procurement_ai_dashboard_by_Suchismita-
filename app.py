@@ -2,14 +2,10 @@ import streamlit as st
 import pandas as pd
 from openai import OpenAI
 
-# ---------- CONFIG ----------
-st.set_page_config(page_title="AI Procurement Assistant", layout="wide")
-
-# Get API key safely (later you will use st.secrets)
-OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", None)
-client = OpenAI(api_key=OPENAI_API_KEY)
-
-# ---------- LLM HELPER ----------
+st.set_page_config(
+    page_title="AI-Enabled Procurement Decision Support",
+    layout="wide"
+)
 def call_llm(prompt: str, temperature: float = 0.2):
     if OPENAI_API_KEY is None:
         return "⚠️ No API key found. Add OPENAI_API_KEY to Streamlit secrets."
