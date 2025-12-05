@@ -9,7 +9,7 @@ st.set_page_config(
 )
 
 # ----------------- LLM HELPER -----------------
-def call_llm(prompt: str, temperature: float = 0.2) -> str:
+def call_llm(prompt: str) -> str:
     """Call OpenAI Responses API and return text."""
     api_key = st.secrets.get("OPENAI_API_KEY", None)
     if not api_key:
@@ -19,15 +19,15 @@ def call_llm(prompt: str, temperature: float = 0.2) -> str:
         client = OpenAI(api_key=api_key)
 
         response = client.responses.create(
-            model="gpt-5-nano",   # works with your test key
+            model="gpt-5-nano",   # free/test model
             input=prompt,
-            temperature=temperature,
         )
 
         return response.output[0].content[0].text
 
     except Exception as e:
         return f"⚠️ Error calling OpenAI API: {e}"
+
 
 
 # ----------------- PAGE LAYOUT -----------------
