@@ -2,21 +2,35 @@ import streamlit as st
 import pandas as pd
 from openai import OpenAI
 
+# ----------------- BASIC CONFIG -----------------
 st.set_page_config(
     page_title="AI-Enabled Procurement Decision Support",
     layout="wide"
 )
-def call_llm(prompt: str, temperature: float = 0.2):
-    if OPENAI_API_KEY is None:
-        return "⚠️ No API key found. Add OPENAI_API_KEY to Streamlit secrets."
-    response = client.responses.create(
-        model="gpt-4.1-mini",   # a real, supported model
-        input=prompt,
-    )
-    return response.output[0].content[0].text
+
+# ----------------- LLM HELPER -----------------
+def call_llm(prompt: str, temperature: float = 0.2) -> str:
+    """Call OpenAI Responses API and return text."""
+    api_key = st.secrets.get("OPENAI_API_KEY", None)
+    if not api_key:
+        return "⚠️ No API key found. Please add OPENAI_API_KEY in Streamlit secrets."
+
+    try:
+        client = OpenAI(api_key=api_key)
+
+        response = client.responses.create(
+            model="gpt-5-nano",   # works with your test key
+            input=prompt,
+            temperature=temperature,
+        )
+
+        return response.output[0].content[0].text
+
+    except Exception as e:
+        return f"⚠️ Error calling OpenAI API: {e}"
 
 
-# ----------------- UI LAYOUT -----------------
+# ----------------- PAGE LAYOUT -----------------
 st.title("AI-Enabled Procurement Decision Support")
 
 tab1, tab2, tab3 = st.tabs([
@@ -25,7 +39,7 @@ tab1, tab2, tab3 = st.tabs([
     "3️⃣ Supplier Evaluation Scorecard"
 ])
 
-# ------------- TAB 1: Supplier Market Intelligence -------------
+# ----------------- TAB 1: SUPPLIER INTELLIGENCE -----------------
 with tab1:
     st.header("Supplier Market Intelligence using GenAI")
 
@@ -47,27 +61,34 @@ with tab1:
         2. For each supplier, provide:
            - Short description
            - Key capabilities
-           - Differentiators (what makes them stand out)
-        3. For each supplier, give a concise table of country-level sourcing risks
-           using four headings: Political, Logistics, Compliance/Regulatory, ESG.
+           - Differentiators
+        3. For each supplier, summarise country-level sourcing risks under:
+           - Political
+           - Logistics
+           - Compliance / Regulatory
+           - ESG
 
-        Make the output structured and easy to read, using clear headings and bullet points.
+        Make the output structured and easy to read using headings and bullet points.
         """
         output = call_llm(prompt)
         st.markdown(output)
 
 
-# ------------- TAB 2: Contract Type Recommendation -------------
+# ----------------- TAB 2: CONTRACT TYPE RECOMMENDATION -----------------
 with tab2:
     st.header("GenAI-Supported Contract Selection")
 
-    st.markdown("We compare **Firm Fixed Price (FFP)**, **Time & Material (T&M)**, and **Cost Reimbursable (CR)** contracts based on project conditions.")
+    st.markdown(
+        "We compare **Firm Fixed Price (FFP)**, **Time & Material (T&M)**, "
+        "and **Cost Reimbursable (CR)** contracts based on project conditions."
+    )
 
     col1, col2 = st.columns(2)
 
     with col1:
         product_category = st.text_input(
-            "Product / Service category (e.g., 'Cloud migration project', 'Laptop assembly line equipment')"
+            "Product / Service category "
+            "(e.g., 'Cloud migration project', 'Packaging line installation')"
         )
         cost_predictability = st.select_slider(
             "Cost predictability",
@@ -88,24 +109,23 @@ with tab2:
     with col2:
         st.subheader("Quick reference: Contract Types")
         st.markdown("""
-        - **Firm Fixed Price (FFP):** Best when scope is clear and costs are predictable. Seller bears more risk.  
-        - **Time & Material (T&M):** Buyer pays for actual time and materials. Shared risk, flexible when scope is evolving.  
-        - **Cost Reimbursable (CR):** Buyer reimburses actual cost + fee. Useful when scope is unclear; buyer bears high cost risk.
+        - **Firm Fixed Price (FFP):** Scope clear, cost predictable, seller bears risk.  
+        - **Time & Material (T&M):** Buyer pays for actual time + materials, scope evolving.  
+        - **Cost Reimbursable (CR):** Buyer reimburses cost + fee, suitable when scope is unclear; buyer bears cost risk.
         """)
 
     def rule_based_contract(cost_pred, volatility, dur):
-        # very simple heuristic
         if cost_pred == "High" and volatility == "Low" and dur == "Long & stable":
             return "Firm Fixed Price (FFP)"
         if cost_pred == "Low" and volatility == "High":
             return "Cost Reimbursable (CR)"
-        # middle ground
         return "Time & Material (T&M)"
 
     if st.button("Recommend Contract Type"):
-        recommended = rule_based_contract(cost_predictability, market_volatility, duration)
+        recommended = rule_based_contract(
+            cost_predictability, market_volatility, duration
+        )
 
-        # Ask LLM for explanation + comparison table
         prompt = f"""
         You are a procurement contracting expert.
 
@@ -115,7 +135,7 @@ with tab2:
         - Market volatility: {market_volatility}
         - Duration & volume certainty: {duration}
 
-        Contract types to compare:
+        Contract types:
         1. Firm Fixed Price (FFP)
         2. Time & Material (T&M)
         3. Cost Reimbursable (CR)
@@ -126,23 +146,26 @@ with tab2:
            - Flexibility when scope changes
            - Administration complexity
 
-        b) Then, clearly recommend **{recommended}** as the most suitable contract type
-           for this situation, with a short 3–4 line justification that links back
-           to cost predictability, volatility and duration conditions.
+        b) Clearly recommend **{recommended}** as the most suitable contract type
+           for this situation, with a short justification (3–4 lines).
         """
         explanation = call_llm(prompt)
         st.subheader(f"Recommended Contract Type: {recommended}")
         st.markdown(explanation)
 
 
-# ------------- TAB 3: Supplier Evaluation Scorecard -------------
+# ----------------- TAB 3: SUPPLIER SCORECARD -----------------
 with tab3:
     st.header("GenAI-Enhanced Supplier Evaluation Scorecard")
 
-    st.markdown("Step 1: Generate initial scorecard using GenAI.  Step 2: Refine weights & KPIs manually.")
+    st.markdown(
+        "Step 1: Generate initial scorecard using GenAI.  "
+        "Step 2: Refine weights & KPIs manually."
+    )
 
     procurement_category = st.text_input(
-        "Procurement category (e.g., 'Electronics components for laptops', 'Global logistics services')"
+        "Procurement category (e.g., 'Electronics components for laptops', "
+        "'Global logistics services')"
     )
 
     if st.button("Generate Initial Scorecard"):
@@ -150,7 +173,7 @@ with tab3:
         Design a supplier evaluation scorecard for the following procurement category:
         '{procurement_category}'.
 
-        Mandatory evaluation dimensions:
+        Mandatory dimensions:
         - Technical capability
         - Quality performance
         - Financial health
@@ -158,10 +181,10 @@ with tab3:
         - Innovation capability
 
         For each dimension, give:
-        - A weight (out of 100, total weights should sum to 100)
-        - 2–4 specific KPIs with short descriptions
+        - A weight (sum of all weights = 100)
+        - 2–4 specific KPIs with short descriptions.
 
-        Present the result in a clean markdown table.
+        Present the result in a clear markdown table.
         """
         scorecard_text = call_llm(prompt)
         st.markdown("### Initial GenAI-Generated Scorecard")
@@ -170,9 +193,6 @@ with tab3:
     st.markdown("---")
     st.subheader("Refine Weightages & KPIs (Manual Customization)")
 
-    st.markdown("You can create your final scorecard below. Adjust weights based on your priorities.")
-
-    # Editable dataframe template
     default_data = {
         "Dimension": [
             "Technical capability",
