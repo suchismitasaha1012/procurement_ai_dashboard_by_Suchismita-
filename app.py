@@ -306,61 +306,131 @@ Return ONLY JSON with:
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-# =========================================================
-# TASK 3 — SUPPLIER SCORECARD
-# =========================================================
+# ===================================================================== #
+#                               TASK 3                                  #
+# ===================================================================== #
+
 with tabs[2]:
 
     st.markdown(
         """
         <div class="task-header">
             <div class="pill">TASK 3 · SUPPLIER SCORECARD</div>
-            <h2>Supplier Evaluation Scorecard</h2>
+            <h2 style="margin-top:0.3rem;margin-bottom:0.1rem;font-size:1.3rem;font-weight:800;">
+                Supplier Evaluation Scorecard
+            </h2>
+            <p style="margin:0.2rem 0;color:#475569;font-size:0.9rem;">
+                Based on Task 1 suppliers, build an initial weighted scorecard and a refined scorecard with KPIs.
+            </p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    market_data = st.session_state.market_data
-    if not market_data:
-        st.info("Run Task 1 first.")
+    # -------------------- Ensure Task 1 Data Exists --------------------
+    market_data = st.session_state.get("market_data", None)
+
+    if not market_data or "topSuppliers" not in market_data:
+        st.info("⚠️ Please run Task 1 (Market Intelligence) before generating scorecards.")
         st.stop()
 
-    suppliers = [s.get("name") for s in market_data.get("topSuppliers",[])]
-    category = market_data.get("category","Category")
+    suppliers = [s["name"] for s in market_data["topSuppliers"]]
+    category = market_data.get("category", "Selected Category")
 
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.write("**Category:**", category)
-    st.write("**Suppliers:**", ", ".join(suppliers))
+    st.markdown('<div class="tiny-label">CONTEXT</div>', unsafe_allow_html=True)
+    st.write(f"**Category:** {category}")
+    st.write("**Suppliers:** " + ", ".join(suppliers))
     st.markdown("</div>", unsafe_allow_html=True)
 
+    # ------------------------- Generate Button -------------------------
     score_btn = st.button("🏅 Generate Scorecards", use_container_width=True)
 
     if score_btn:
-        # INITIAL SCORECARD
-        prompt_init = f"""
-Create supplier scorecard for: {suppliers}
+
+        # ---------------- Initial Scorecard -----------------
+        with st.spinner("Generating initial scorecard…"):
+            prompt_initial = f"""
+You are designing a supplier evaluation scorecard for Dell.
+
+Suppliers: {", ".join(suppliers)}
 Category: {category}
-Return ONLY JSON.
-"""
-        raw = call_llm(prompt_init)
-        st.session_state.score_initial = parse_json_from_text(raw)
 
-        # REFINED SCORECARD
-        prompt_ref = """
-Refine scorecard with KPIs.
-Return ONLY JSON.
-"""
-        raw2 = call_llm(prompt_ref)
-        st.session_state.score_refined = parse_json_from_text(raw2)
+Create an initial scorecard using weights:
+- Technical Capability: 25
+- Quality Performance: 20
+- Financial Health: 20
+- ESG Compliance: 20
+- Innovation Capability: 15
 
-    score_initial = st.session_state.score_initial
-    score_refined = st.session_state.score_refined
+Return ONLY JSON structured as:
+{{
+ "evaluationTitle": "Initial Scorecard",
+ "evaluationDate": "{date.today().isoformat()}",
+ "category": "{category}",
+ "dimensions": [...],
+ "supplierScores": [...],
+ "bestSupplier": {{
+     "name": "",
+     "score": 0,
+     "reasoning": ""
+ }},
+ "conclusion": ""
+}}
+"""
+            raw_initial = call_llm(prompt_initial)
+            score_initial = parse_json_from_text(raw_initial)
+            st.session_state.score_initial = score_initial
+
+        # ---------------- Refined Scorecard -----------------
+        with st.spinner("Refining scorecard with KPIs…"):
+            prompt_refined = f"""
+Refine the following Dell supplier scorecard. Add KPIs to each dimension and update weights.
+
+{json.dumps(score_initial)}
+
+Return ONLY JSON with same structure, but each dimension must include "kpis".
+"""
+            raw_refined = call_llm(prompt_refined)
+            score_refined = parse_json_from_text(raw_refined)
+            st.session_state.score_refined = score_refined
+
+    # ---------------------- DISPLAY RESULTS -------------------------
+
+    score_initial = st.session_state.get("score_initial", None)
+    score_refined = st.session_state.get("score_refined", None)
 
     if score_initial:
-        st.write("### 🟢 Initial Scorecard")
-        st.json(score_initial)
+        st.markdown("### 🟢 Initial Scorecard")
+        st.caption(f"{category} • {score_initial['evaluationDate']}")
+
+        # Convert to DataFrame
+        rows = []
+        for s in score_initial["supplierScores"]:
+            row = {"Supplier": s["supplierName"], "Weighted Total": s["weightedTotal"], "Rating": s["rating"]}
+            for d in score_initial["dimensions"]:
+                row[d["name"]] = s["scores"][d["name"]]
+            rows.append(row)
+
+        st.dataframe(pd.DataFrame(rows), use_container_width=True)
+
+        best = score_initial["bestSupplier"]
+        st.markdown(f"#### 🏆 Best Supplier: **{best['name']}** — {best['score']}")
+        st.write(best["reasoning"])
 
     if score_refined:
-        st.write("### 🔵 Refined Scorecard (with KPIs)")
-        st.json(score_refined)
+        st.markdown("### 🔵 Refined Scorecard (with KPIs)")
+        st.caption(f"{category} • {score_refined['evaluationDate']}")
+
+        rows = []
+        for s in score_refined["supplierScores"]:
+            row = {"Supplier": s["supplierName"], "Weighted Total": s["weightedTotal"], "Rating": s["rating"]}
+            for d in score_refined["dimensions"]:
+                row[d["name"]] = s["scores"][d["name"]]
+            rows.append(row)
+
+        st.dataframe(pd.DataFrame(rows), use_container_width=True)
+
+        best = score_refined["bestSupplier"]
+        st.markdown(f"#### 🥇 Best Supplier (Refined): **{best['name']}** — {best['score']}")
+        st.write(best["reasoning"])
