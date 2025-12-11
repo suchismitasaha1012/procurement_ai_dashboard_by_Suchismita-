@@ -505,9 +505,9 @@ Return ONLY valid JSON (no markdown, no commentary) with EXACTLY this structure:
   "finalDecisionSummary": "2-3 sentences summarising Dell's contract selection decisions and trade-offs."
 }}
 """
-""".format(items=items_csv)
 
-                raw2 = call_llm(prompt2)
+response = call_llm(prompt)
+               
                 try:
                     contract_data = parse_json_from_text(raw2)
                     st.session_state.contract_data = contract_data
