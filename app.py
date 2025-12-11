@@ -181,32 +181,34 @@ tabs = st.tabs([
     "🏅 3 · Supplier Evaluation Scorecard",
 ])
 
-# =========================================================
-# TASK 1
-# =========================================================
+# ============================
+#      TASK 1  (FIXED)
+# ============================
+
 with tabs[0]:
-    st.markdown(
-        """
+
+    st.markdown("""
         <div class="task-header">
             <div class="pill">TASK 1 · MARKET INTELLIGENCE</div>
-            <h2>Supplier Market Intelligence using GenAI</h2>
+            <h2 style="margin-top:0.3rem;margin-bottom:0.1rem;font-size:1.3rem;font-weight:800;">
+                Supplier Market Intelligence using GenAI
+            </h2>
+            <p style="margin:0.2rem 0;color:#475569;font-size:0.9rem;">
+                Select a procurement category and generate supplier intelligence + country risk insights.
+            </p>
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    """, unsafe_allow_html=True)
 
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    col1, col2 = st.columns([3,1])
 
+    col1, col2 = st.columns([3,1])
     with col1:
-        st.markdown('<div class="tiny-label">PROCUREMENT CATEGORY</div>', unsafe_allow_html=True)
         selected_cat = st.selectbox(
             "Select category",
-            ["-- Select Category --"] + task1_categories,
+            options=["-- Select Category --"] + task1_categories,
             index=0,
             label_visibility="collapsed",
         )
-
     with col2:
         gen_btn = st.button("🔍 Generate Intelligence", use_container_width=True)
 
@@ -214,96 +216,159 @@ with tabs[0]:
 
     if gen_btn:
         if selected_cat == "-- Select Category --":
-            st.warning("Please select a category.")
+            st.warning("Please select a category first.")
         else:
-            prompt1 = f"""
-You are a procurement market-intelligence analyst for Dell.
+            with st.spinner("Generating Supplier Intelligence…"):
+                prompt = f"""
+You are Dell’s senior procurement intelligence analyst.
 
-Category: {selected_cat}
+Generate ONLY VALID JSON:
 
-Identify:
-1. Top 5 global suppliers  
-2. 3–4 key sourcing-country risks  
+For category: "{selected_cat}"
 
-Return ONLY JSON (no explanation).
-"""
-            raw = call_llm(prompt1)
-            try:
-                st.session_state.market_data = parse_json_from_text(raw)
-            except Exception as e:
-                st.error("Invalid LLM JSON.")
-                st.caption(raw)
+1. Provide a 2–3 line market overview.
+2. Identify top 5 global suppliers with:
+   - Rank
+   - Name
+   - HQ
+   - Capabilities (4)
+   - Differentiators
+   - Why relevant for Dell
+3. Provide 3–4 country risks (political, logistics, compliance, ESG) with 1–10 scores.
 
-    market_data = st.session_state.market_data
-    if market_data:
+FORMAT:
+{{
+ "category": "{selected_cat}",
+ "marketOverview": "...",
+ "topSuppliers": [...],
+ "countryRisks": [...]
+}}
+                """
+
+                raw = call_llm(prompt)
+                try:
+                    st.session_state.market_data = parse_json_from_text(raw)
+                except:
+                    st.error("AI returned invalid JSON")
+                    st.write(raw)
+
+    # DISPLAY RESULTS
+    data = st.session_state.market_data
+    if data:
+
+        # Market Overview
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.write("### 🌍 Market Overview")
-        st.write(market_data.get("marketOverview",""))
+        st.subheader("🌍 Market Overview")
+        st.write(data.get("marketOverview",""))
         st.markdown("</div>", unsafe_allow_html=True)
 
-# =========================================================
-# TASK 2 — CONTRACT SELECTION
-# =========================================================
+        # Suppliers
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.subheader("🏭 Top 5 Global Suppliers")
+        for s in data["topSuppliers"]:
+            st.write(f"### {s['rank']}. {s['name']}  ({s['headquarters']})")
+            st.write("**Capabilities:**", ", ".join(s["keyCapabilities"]))
+            st.write("**Differentiators:**", s["differentiators"])
+            st.write("**Dell relevance:**", s["dellRelevance"])
+            st.markdown("---")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # Country Risks
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.subheader("⚠️ Country Risk Assessment")
+        for c in data["countryRisks"]:
+            st.write(f"### {c['country']}")
+            st.write(f"Supplier Concentration: {c['supplierConcentration']}")
+            st.write(f"Political Risk: {c['politicalRisk']['score']}/10")
+            st.write(f"Logistics Risk: {c['logisticsRisk']['score']}/10")
+            st.write(f"Compliance Risk: {c['complianceRisk']['score']}/10")
+            st.write(f"ESG Risk: {c['esgRisk']['score']}/10")
+            st.write(f"Mitigation: {c['mitigation']}")
+            st.markdown("---")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+
+
+# ============================
+#      TASK 2  (FIXED)
+# ============================
+
 with tabs[1]:
-    st.markdown(
-        """
+
+    st.markdown("""
         <div class="task-header">
             <div class="pill">TASK 2 · CONTRACT SELECTION</div>
-            <h2>GenAI-Supported Contract Type Recommendation</h2>
+            <h2 style="margin-top:0.3rem;margin-bottom:0.1rem;font-size:1.3rem;font-weight:800;">
+                Contract Type Recommendation using GenAI
+            </h2>
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    """, unsafe_allow_html=True)
 
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="tiny-label">DELL PROCUREMENT ITEMS</div>', unsafe_allow_html=True)
-
-    selected_items = st.multiselect(
-        "Select products/services",
+    selected_products = st.multiselect(
+        "Select procurement items",
         task2_products,
-        label_visibility="collapsed",
+        label_visibility="collapsed"
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
     analyze_btn = st.button("📑 Analyze Contract Options", use_container_width=True)
 
     if analyze_btn:
-        if not selected_items:
+
+        if not selected_products:
             st.warning("Please select at least one item.")
         else:
-            items_csv = ", ".join(selected_items)
-            prompt2 = f"""
-You are a supply-chain contract expert at Dell.
+            items_csv = ", ".join(selected_products)
 
-Evaluate contract types for: {items_csv}
+            with st.spinner("Analyzing contract suitability…"):
+
+                prompt2 = f"""
+You are Dell’s global supply-chain contract advisor.
+
+Evaluate contract suitability for items: {items_csv}
 
 Return ONLY JSON with:
-- assessment
-- recommended contract
-- alternative contract
-- comparison summary
-- final decision summary
-"""
-            raw2 = call_llm(prompt2)
-            try:
-                st.session_state.contract_data = parse_json_from_text(raw2)
-            except:
-                st.error("Invalid JSON returned.")
-                st.caption(raw2)
 
-    contract_data = st.session_state.contract_data
-    if contract_data:
+{{
+ "analysisDate": "{date.today()}",
+ "categories": [
+    {{
+      "name": "item",
+      "recommendedContract": "...",
+      "confidence": "High/Medium/Low",
+      "justification": "...",
+      "alternativeContract": "...",
+      "comparisonSummary": "..."
+    }}
+ ],
+ "finalDecisionSummary": "..."
+}}
+                """
+
+                raw2 = call_llm(prompt2)
+                try:
+                    st.session_state.contract_data = parse_json_from_text(raw2)
+                except:
+                    st.error("JSON parsing failed")
+                    st.write(raw2)
+
+    data2 = st.session_state.contract_data
+    if data2:
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.write("### 📌 Contract Recommendations")
+        st.subheader("📌 Contract Recommendations")
 
-        for cat in contract_data.get("categories", []):
-            st.write(f"#### {cat.get('name','')}")
-            st.write("**Recommended:**", cat.get("recommendedContract",""))
-            st.write("**Confidence:**", cat.get("confidence",""))
-            st.write("**Justification:**")
-            st.write(cat.get("justification",""))
-            st.write("---")
+        for item in data2["categories"]:
+            st.write(f"### {item['name']}")
+            st.write("**Recommended Contract:**", item["recommendedContract"])
+            st.write("**Confidence:**", item["confidence"])
+            st.write("**Justification:**", item["justification"])
+            st.write("**Alternative:**", item["alternativeContract"])
+            st.write("**Comparison:**", item["comparisonSummary"])
+            st.markdown("---")
 
+        st.write("### 🧾 Final Summary")
+        st.write(data2["finalDecisionSummary"])
         st.markdown("</div>", unsafe_allow_html=True)
 
 # ===================================================================== #
