@@ -429,39 +429,91 @@ Recommend suitable **supply-chain contract types** chosen only from:
 - Vendor-Managed Inventory (VMI)
 - Cost-Sharing / Incentive Contract
 
-Return **ONLY valid JSON**, no markdown, using this schema:
+prompt = f"""
+You are a supply-chain contract expert for Dell Technologies.
+Evaluate the most suitable contract types for these items: {", ".join(selected_items)}.
 
-{{
-  "analysisDate": "{date.today().isoformat()}",
+Return ONLY valid JSON (no markdown), exactly in this shape:
+
+{
+  "analysisDate": "YYYY-MM-DD",
   "categories": [
-    {{
-      "name": "Item or product group",
-      "assessment": {{
-        "demandPattern": "Stable / Seasonal / Highly volatile",
-        "demandReason": "one short sentence",
-        "marketCharacteristics": "1-2 sentences",
-        "volumeFlexibility": "High / Medium / Low",
-        "riskProfile": "key risks in 1-2 sentences"
-      }},
-      "recommendedContract": "one of the contract types above",
+    {
+      "name": "Laptop Components (Displays, Batteries, Keyboards)",
+      "assessment": {
+        "demandPattern": "Stable / Seasonal / Highly seasonal",
+        "costPredictability": {
+          "level": "High / Medium / Low",
+          "explanation": "1–2 sentences on how predictable total cost is under the recommended contract."
+        },
+        "marketVolatility": {
+          "level": "High / Medium / Low",
+          "explanation": "1–2 sentences on how volatile prices / supply are and how the contract handles it."
+        },
+        "durationAndVolume": {
+          "profile": "Short-term / Medium-term / Long-term, Low / Medium / High volume",
+          "explanation": "1–2 sentences on how well the contract fits duration & volume requirements."
+        },
+        "riskProfile": "Key supply and financial risks in 2–3 short phrases."
+      },
+      "recommendedContract": "Quantity Flexibility Contract",
       "confidence": "High / Medium / Low",
-      "justification": "2-3 sentence explanation for why this contract fits Dell",
-      "alternativeContract": "second-best option from the list",
-      "implementationConsiderations": ["bullet 1", "bullet 2"],
-      "keyContractClauses": ["clause 1", "clause 2"]
-    }}
+      "justification": "Short paragraph explaining why this contract is best overall for this category.",
+      "alternativeContract": "Vendor-Managed Inventory (VMI)",
+      "comparisonSummary": "1–2 sentences explicitly comparing recommended vs alternative for this category "
+                           "with respect to cost predictability, market volatility and duration / volume fit.",
+      "implementationConsiderations": [
+        "Practical steps needed to implement this contract for Dell."
+      ],
+      "keyContractClauses": [
+        "Most important clauses Dell must negotiate."
+      ]
+    }
   ],
-  "contractComparison": {{
-    "Buy-back Contract": {{
-      "description": "1-2 sentences",
-      "bestFor": "when this is suitable",
-      "advantages": ["adv1","adv2"],
-      "disadvantages": ["dis1"],
-      "dellExamples": ["example or scenario"]
-    }}
-  }},
-  "procurementRecommendations": ["rec1","rec2"]
-}}
+
+  "contractComparison": {
+    "Quantity Flexibility Contract": {
+      "description": "1–2 sentences describing the contract.",
+      "bestFor": "Which product / demand situations this works best for.",
+      "costPredictability": "High / Medium / Low – with a one-line reason.",
+      "marketVolatility": "How well it handles volatile prices / supply.",
+      "durationAndVolumeFit": "What duration / volume profile it fits best.",
+      "advantages": ["Advantage 1", "Advantage 2"],
+      "disadvantages": ["Limitation 1"]
+    },
+comp = data.get("contractComparison", {})
+if comp:
+    st.markdown("### 🔍 Contract Type Comparison")
+    for name, info in comp.items():
+        st.markdown(f"**{name}** – {info.get('description','')}")
+        st.markdown(
+            f"- **Best for:** {info.get('bestFor','')}\n"
+            f"- **Cost predictability:** {info.get('costPredictability','')}\n"
+            f"- **Market volatility handling:** {info.get('marketVolatility','')}\n"
+            f"- **Duration & volume fit:** {info.get('durationAndVolumeFit','')}\n"
+            f"- **Advantages:** {', '.join(info.get('advantages', []))}\n"
+            f"- **Disadvantages:** {', '.join(info.get('disadvantages', []))}"
+        )
+        st.markdown("---")
+      
+    "Vendor-Managed Inventory (VMI)": {
+      "description": "...",
+      "bestFor": "...",
+      "costPredictability": "...",
+      "marketVolatility": "...",
+      "durationAndVolumeFit": "...",
+      "advantages": ["..."],
+      "disadvantages": ["..."]
+    }
+    /* Include all other contract types that are meaningfully considered. */
+  },
+if data.get("finalDecisionSummary"):
+    st.markdown("### ✅ Final Contract Selection Decision")
+    st.write(data["finalDecisionSummary"])
+  "finalDecisionSummary": "2–3 sentences summarising the overall contract selection decision for Dell, "
+                          "directly referencing cost predictability, market volatility and duration / volume requirements."
+}
+"""
 
 Only include contract types that are actually relevant.
                 """.strip()
@@ -485,6 +537,21 @@ Only include contract types that are actually relevant.
             with col_a:
                 st.markdown("**Recommended contract:** " + cat.get("recommendedContract", ""))
                 st.markdown("**Confidence:** " + cat.get("confidence", ""))
+                    assess = cat.get("assessment", {})
+    cp = assess.get("costPredictability", {})
+    mv = assess.get("marketVolatility", {})
+    dv = assess.get("durationAndVolume", {})
+
+    st.markdown("**Contract fit assessment**")
+    st.markdown(
+        f"- **Cost predictability:** {cp.get('level', '')}"
+        f"{' – ' + cp.get('explanation', '') if cp.get('explanation') else ''}\n"
+        f"- **Market volatility:** {mv.get('level', '')}"
+        f"{' – ' + mv.get('explanation', '') if mv.get('explanation') else ''}\n"
+        f"- **Duration & volume requirements:** {dv.get('profile', '')}"
+        f"{' – ' + dv.get('explanation', '') if dv.get('explanation') else ''}"
+    )
+
                 st.markdown("**Why this works for Dell**")
                 st.write(cat.get("justification", ""))
             with col_b:
