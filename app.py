@@ -696,7 +696,11 @@ Do not include any explanation text or markdown.
     score_refined = st.session_state.score_refined
 
     if score_initial:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown(
+    '<div class="pill">TASK 3 · SUPPLIER SCORECARD</div>',
+    unsafe_allow_html=True,
+)
+
             # ---------- INITIAL SCORECARD ----------
     st.markdown("### 🟢 Initial Scorecard")
 
