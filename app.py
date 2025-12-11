@@ -651,17 +651,13 @@ Do not include any explanation text or markdown.
             row["Rating"] = s.get("rating", "")
             rows.append(row)
 
-        df_initial = pd.DataFrame(rows)
-        # Sort by score
-        df_initial = df_initial.sort_values("Weighted total", ascending=False)
+        df_initial = pd.DataFrame(rows).sort_values("Weighted total", ascending=False)
 
-        st.dataframe(
-            df_initial.style.background_gradient(
-                cmap="Greens", subset=["Weighted total"]
-            ),
-            use_container_width=True,
-            height=260,
-        )
+st.dataframe(
+    df_initial,
+    use_container_width=True,
+    height=260,
+)
 
         if score_initial.get("bestSupplier"):
             best = score_initial["bestSupplier"]
