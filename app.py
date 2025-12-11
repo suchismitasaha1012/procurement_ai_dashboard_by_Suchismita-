@@ -442,7 +442,6 @@ Structure:
 # ===================================================================== #
 
 with tabs[2]:
-    # Header
     st.markdown(
         """
         <div class="task-header">
@@ -459,16 +458,12 @@ with tabs[2]:
         unsafe_allow_html=True,
     )
 
-    # Need Task 1 data
     market_data = st.session_state.market_data
     if not market_data or not market_data.get("topSuppliers"):
         st.info("Run **Task 1 – Supplier Market Intelligence** first to identify suppliers.")
         st.stop()
 
-    suppliers = [
-        s.get("name", f"Supplier {i+1}")
-        for i, s in enumerate(market_data.get("topSuppliers", []))
-    ]
+    suppliers = [s["name"] for s in market_data["topSuppliers"]]
     category = market_data.get("category", "Selected category")
 
     # Context card
@@ -480,56 +475,50 @@ with tabs[2]:
 
     score_btn = st.button("🏅 Generate Scorecards", use_container_width=True)
 
-    # --------------------- LLM CALLS --------------------- #
-
     if score_btn:
-        # ---------- Initial scorecard ----------
+        # ---------- INITIAL SCORECARD ----------
         with st.spinner("Generating initial scorecard…"):
             prompt_score_initial = f"""
-Return ONLY valid JSON, no markdown, no explanations.
-
-Create a supplier evaluation scorecard for Dell Technologies.
+You are designing a **supplier evaluation scorecard** for Dell Technologies.
 
 Suppliers: {", ".join(suppliers)}
 Category: {category}
 
-Use EXACTLY 5 dimensions:
-- Technical Capability (weight 25)
-- Quality Performance (weight 20)
-- Financial Health (weight 20)
-- ESG Compliance (weight 20)
-- Innovation Capability (weight 15)
+Create an initial scorecard with **5 evaluation dimensions**:
+- Technical Capability (weight 25%)
+- Quality Performance (weight 20%)
+- Financial Health (weight 20%)
+- ESG Compliance (weight 20%)
+- Innovation Capability (weight 15%)
 
-For each supplier:
-- Give 0–100 scores on each dimension
-- Compute `weightedTotal` (0–100) using the weights
-- Give a text `rating` ("Excellent", "Good", "Average", "Poor")
-- Include `strengths` and `weaknesses` lists
+For each supplier, assign 0-10 scores on each dimension, and compute a numeric
+`weightedTotal` (0-10) using the weights above. Also assign a textual `rating`
+("Excellent", "Good", "Average", "Poor").
 
-JSON structure (keys must match):
+Return **ONLY valid JSON**, no prose, with this structure:
 
 {{
   "evaluationTitle": "Initial Scorecard",
   "category": "{category}",
   "evaluationDate": "{date.today().isoformat()}",
   "dimensions": [
-    {{"name":"Technical Capability","weight":25,"description":"text"}},
-    {{"name":"Quality Performance","weight":20,"description":"text"}},
-    {{"name":"Financial Health","weight":20,"description":"text"}},
-    {{"name":"ESG Compliance","weight":20,"description":"text"}},
-    {{"name":"Innovation Capability","weight":15,"description":"text"}}
+    {{"name":"Technical Capability","weight":25,"description":"1 sentence"}},
+    {{"name":"Quality Performance","weight":20,"description":"1 sentence"}},
+    {{"name":"Financial Health","weight":20,"description":"1 sentence"}},
+    {{"name":"ESG Compliance","weight":20,"description":"1 sentence"}},
+    {{"name":"Innovation Capability","weight":15,"description":"1 sentence"}}
   ],
   "supplierScores": [
     {{
       "supplierName": "Supplier name",
       "scores": {{
-        "Technical Capability": 85,
-        "Quality Performance": 80,
-        "Financial Health": 90,
-        "ESG Compliance": 75,
-        "Innovation Capability": 82
+        "Technical Capability": 9.2,
+        "Quality Performance": 8.8,
+        "Financial Health": 9.0,
+        "ESG Compliance": 8.7,
+        "Innovation Capability": 8.9
       }},
-      "weightedTotal": 83.5,
+      "weightedTotal": 8.9,
       "rating": "Excellent",
       "strengths": ["strength1","strength2"],
       "weaknesses": ["weak1"]
@@ -537,159 +526,159 @@ JSON structure (keys must match):
   ],
   "bestSupplier": {{
     "name": "Supplier name",
-    "score": 88.4,
+    "score": 9.1,
     "reasoning": "2-3 sentence explanation"
   }},
   "conclusion": "2-3 sentence recommendation for Dell"
 }}
-"""
+            """.strip()
+
             raw_initial = call_llm(prompt_score_initial)
             try:
                 score_initial = parse_json_from_text(raw_initial)
+                score_initial = ensure_weighted_totals_and_ratings(score_initial)
                 st.session_state.score_initial = score_initial
             except Exception as e:
                 st.error(f"Could not parse initial scorecard JSON: {e}")
                 st.caption(raw_initial)
                 st.stop()
 
-        # ---------- Refined scorecard ----------
+        # ---------- REFINED SCORECARD ----------
         with st.spinner("Refining scorecard with KPIs…"):
             prompt_score_refined = f"""
-Refine the following supplier scorecard JSON for Dell:
+Refine the following supplier evaluation scorecard for Dell:
 
 {json.dumps(st.session_state.score_initial)}
 
-Change the weights to:
-- Technical Capability 30
-- Quality Performance 25
-- ESG Compliance 25
-- Financial Health 15
-- Innovation Capability 5
+Adjust the weights to:
+- Technical Capability 30%
+- Quality Performance 25%
+- ESG Compliance 25%
+- Financial Health 15%
+- Innovation Capability 5%
 
-For each dimension add `kpis`:
+For each dimension, add 2-3 concrete KPIs under a new `kpis` field:
 "kpis":[{{"name":"KPI name","description":"what it measures","importance":"why it matters for Dell"}}]
 
-Recalculate `weightedTotal` for each supplier using the new weights.
+Recalculate `weightedTotal` scores based on the new weights.
 
-Return ONLY valid JSON with the SAME top-level structure, plus the `kpis`
-field inside each dimension.
-"""
+Return **ONLY valid JSON** with the same top-level structure as before,
+plus the `kpis` field inside each dimension.
+Do not include any explanation text or markdown.
+            """.strip()
+
             raw_refined = call_llm(prompt_score_refined)
             try:
                 score_refined = parse_json_from_text(raw_refined)
+                score_refined = ensure_weighted_totals_and_ratings(score_refined)
                 st.session_state.score_refined = score_refined
             except Exception as e:
                 st.error(f"Could not parse refined scorecard JSON: {e}")
                 st.caption(raw_refined)
 
-    # --------------------- DISPLAY --------------------- #
+    # ----------------------------------------------------------------- #
+    #                     DISPLAY SCORECARDS                            #
+    # ----------------------------------------------------------------- #
 
-    score_initial = st.session_state.get("score_initial")
-    score_refined = st.session_state.get("score_refined")
+    score_initial = st.session_state.score_initial
+    score_refined = st.session_state.score_refined
 
-    # ---------- INITIAL SCORECARD ----------
     if score_initial:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown("### 🟢 Initial Scorecard", unsafe_allow_html=True)
         st.caption(f"{category} • {score_initial.get('evaluationDate', '')}")
 
-        # Make table
-        dim_names = [d.get("name") for d in score_initial.get("dimensions", []) if d.get("name")]
-        rows = []
+        # Build dataframe
+        initial_rows = []
         for s in score_initial.get("supplierScores", []):
-            row = {}
-            row["Supplier"] = s.get("supplierName", "")
-            scores_dict = s.get("scores", {}) or {}
-            for dn in dim_names:
-                row[dn] = scores_dict.get(dn)
-            # use .get to avoid KeyError
-            row["Weighted Total"] = (
-                s.get("weightedTotal")
-                or s.get("weighted_total")
-                or s.get("weightedScore")
-            )
-            row["Rating"] = s.get("rating", "")
-            rows.append(row)
+            row = {"Supplier": s.get("supplierName", "")}
+            for dim in score_initial.get("dimensions", []):
+                dname = dim.get("name")
+                if dname:
+                    row[dname] = s.get("scores", {}).get(dname)
+            row["Weighted Total"] = s.get("weightedTotal")
+            row["Rating"] = s.get("rating")
+            initial_rows.append(row)
 
-        if rows:
+        if initial_rows:
             df_initial = (
-                pd.DataFrame(rows)
-                .sort_values("Weighted Total", ascending=False, na_position="last")
+                pd.DataFrame(initial_rows)
+                .sort_values("Weighted Total", ascending=False)
                 .reset_index(drop=True)
             )
             st.dataframe(df_initial, use_container_width=True, height=260)
-        else:
-            st.warning("No supplier scores returned in initial scorecard.")
 
-        # Best supplier call-out
-        best = score_initial.get("bestSupplier")
-        if best:
+        # Best supplier summary
+        if score_initial.get("bestSupplier"):
+            best = score_initial["bestSupplier"]
             st.markdown("#### 🏆 Best Supplier (Initial Scorecard)")
             st.markdown(
-                f"**{best.get('name','')}** — overall score **{best.get('score','')}**"
+                f"**{best.get('name', '')}** — overall score **{best.get('score', '')}**"
             )
             if best.get("reasoning"):
                 st.write(best["reasoning"])
-
-        if score_initial.get("conclusion"):
-            st.markdown("**Conclusion:**")
-            st.write(score_initial.get("conclusion"))
-
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # ---------- REFINED SCORECARD ----------
+    # --------- Refined Scorecard --------- #
     if score_refined:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown("### 🔵 Refined Scorecard (with KPIs)", unsafe_allow_html=True)
         st.caption(f"{category} • {score_refined.get('evaluationDate', '')}")
 
-        dim_names_ref = [d.get("name") for d in score_refined.get("dimensions", []) if d.get("name")]
-        rows_ref = []
+        refined_rows = []
         for s in score_refined.get("supplierScores", []):
-            row = {}
-            row["Supplier"] = s.get("supplierName", "")
-            scores_dict = s.get("scores", {}) or {}
-            for dn in dim_names_ref:
-                row[dn] = scores_dict.get(dn)
-            row["Weighted Total"] = (
-                s.get("weightedTotal")
-                or s.get("weighted_total")
-                or s.get("weightedScore")
-            )
-            row["Rating"] = s.get("rating", "")
-            rows_ref.append(row)
+            row = {"Supplier": s.get("supplierName", "")}
+            for dim in score_refined.get("dimensions", []):
+                dname = dim.get("name")
+                if dname:
+                    row[dname] = s.get("scores", {}).get(dname)
+            row["Weighted Total"] = s.get("weightedTotal")
+            row["Rating"] = s.get("rating")
+            refined_rows.append(row)
 
-        if rows_ref:
-            df_ref = (
-                pd.DataFrame(rows_ref)
-                .sort_values("Weighted Total", ascending=False, na_position="last")
+        if refined_rows:
+            df_refined = (
+                pd.DataFrame(refined_rows)
+                .sort_values("Weighted Total", ascending=False)
                 .reset_index(drop=True)
             )
-            st.dataframe(df_ref, use_container_width=True, height=260)
-        else:
-            st.warning("No supplier scores returned in refined scorecard.")
+            st.dataframe(df_refined, use_container_width=True, height=260)
 
-        # Optional: best supplier in refined view
-        best2 = score_refined.get("bestSupplier")
-        if best2:
+        # Best supplier after refinement
+        if score_refined.get("bestSupplier"):
+            best2 = score_refined["bestSupplier"]
             st.markdown("#### 🥇 Best Supplier (Refined Scorecard)")
             st.markdown(
-                f"**{best2.get('name','')}** — overall score **{best2.get('score','')}**"
+                f"**{best2.get('name', '')}** — overall score **{best2.get('score', '')}**"
             )
             if best2.get("reasoning"):
                 st.write(best2["reasoning"])
 
-        # Show KPIs per dimension in an expander
-        if score_refined.get("dimensions"):
-            with st.expander("📊 Dimension KPIs used in refined scorecard"):
-                for d in score_refined.get("dimensions", []):
-                    st.markdown(f"**{d.get('name','Dimension')}**  (Weight: {d.get('weight','?')}%)")
-                    st.write(d.get("description", ""))
-                    for kpi in d.get("kpis", []):
-                        st.markdown(
-                            f"- **{kpi.get('name','KPI')}** – {kpi.get('description','')} "
-                            f"*(Importance: {kpi.get('importance','')})*"
-                        )
-                    st.markdown("---")
+        # Dimension KPIs expander – robust to different formats
+        with st.expander("📊 Dimension KPIs used in refined scorecard", expanded=False):
+            for dim in score_refined.get("dimensions", []):
+                dname = dim.get("name", "Dimension")
+                st.markdown(f"**{dname}**")
+                kpis = dim.get("kpis", [])
+                if not kpis:
+                    st.caption("No KPIs returned by the model.")
+                    continue
+
+                if not isinstance(kpis, list):
+                    kpis = [kpis]
+
+                for kpi in kpis:
+                    # Sometimes model may send strings instead of dicts
+                    if isinstance(kpi, dict):
+                        name = kpi.get("name", "KPI")
+                        desc = kpi.get("description", "")
+                        imp = kpi.get("importance", "")
+                        line = f"- **{name}** – {desc}"
+                        if imp:
+                            line += f"  \n  _Why it matters_: {imp}"
+                        st.markdown(line)
+                    else:
+                        # Fallback: plain string
+                        st.markdown(f"- {kpi}")
 
         st.markdown("</div>", unsafe_allow_html=True)
