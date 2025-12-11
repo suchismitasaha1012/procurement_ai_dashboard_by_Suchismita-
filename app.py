@@ -431,31 +431,31 @@ Recommend suitable **supply-chain contract types** chosen only from:
 
 prompt = f"""
 You are a supply-chain contract expert for Dell Technologies.
-Evaluate the most suitable contract types for these items: {", ".join(selected_items)}.
+Evaluate the most suitable contract types for these items: {items}.
 
 Return ONLY valid JSON (no markdown), exactly in this shape:
 
-{
+{{
   "analysisDate": "YYYY-MM-DD",
   "categories": [
-    {
+    {{
       "name": "Laptop Components (Displays, Batteries, Keyboards)",
-      "assessment": {
+      "assessment": {{
         "demandPattern": "Stable / Seasonal / Highly seasonal",
-        "costPredictability": {
+        "costPredictability": {{
           "level": "High / Medium / Low",
           "explanation": "1–2 sentences on how predictable total cost is under the recommended contract."
-        },
-        "marketVolatility": {
+        }},
+        "marketVolatility": {{
           "level": "High / Medium / Low",
           "explanation": "1–2 sentences on how volatile prices / supply are and how the contract handles it."
-        },
-        "durationAndVolume": {
+        }},
+        "durationAndVolume": {{
           "profile": "Short-term / Medium-term / Long-term, Low / Medium / High volume",
           "explanation": "1–2 sentences on how well the contract fits duration & volume requirements."
-        },
+        }},
         "riskProfile": "Key supply and financial risks in 2–3 short phrases."
-      },
+      }},
       "recommendedContract": "Quantity Flexibility Contract",
       "confidence": "High / Medium / Low",
       "justification": "Short paragraph explaining why this contract is best overall for this category.",
@@ -468,11 +468,11 @@ Return ONLY valid JSON (no markdown), exactly in this shape:
       "keyContractClauses": [
         "Most important clauses Dell must negotiate."
       ]
-    }
+    }}
   ],
 
-  "contractComparison": {
-    "Quantity Flexibility Contract": {
+  "contractComparison": {{
+    "Quantity Flexibility Contract": {{
       "description": "1–2 sentences describing the contract.",
       "bestFor": "Which product / demand situations this works best for.",
       "costPredictability": "High / Medium / Low – with a one-line reason.",
@@ -480,23 +480,8 @@ Return ONLY valid JSON (no markdown), exactly in this shape:
       "durationAndVolumeFit": "What duration / volume profile it fits best.",
       "advantages": ["Advantage 1", "Advantage 2"],
       "disadvantages": ["Limitation 1"]
-    },
-comp = data.get("contractComparison", {})
-if comp:
-    st.markdown("### 🔍 Contract Type Comparison")
-    for name, info in comp.items():
-        st.markdown(f"**{name}** – {info.get('description','')}")
-        st.markdown(
-            f"- **Best for:** {info.get('bestFor','')}\n"
-            f"- **Cost predictability:** {info.get('costPredictability','')}\n"
-            f"- **Market volatility handling:** {info.get('marketVolatility','')}\n"
-            f"- **Duration & volume fit:** {info.get('durationAndVolumeFit','')}\n"
-            f"- **Advantages:** {', '.join(info.get('advantages', []))}\n"
-            f"- **Disadvantages:** {', '.join(info.get('disadvantages', []))}"
-        )
-        st.markdown("---")
-      
-    "Vendor-Managed Inventory (VMI)": {
+    }},
+    "Vendor-Managed Inventory (VMI)": {{
       "description": "...",
       "bestFor": "...",
       "costPredictability": "...",
@@ -504,17 +489,13 @@ if comp:
       "durationAndVolumeFit": "...",
       "advantages": ["..."],
       "disadvantages": ["..."]
-    }
-    /* Include all other contract types that are meaningfully considered. */
-  },
-if data.get("finalDecisionSummary"):
-    st.markdown("### ✅ Final Contract Selection Decision")
-    st.write(data["finalDecisionSummary"])
+    }}
+  }},
+
   "finalDecisionSummary": "2–3 sentences summarising the overall contract selection decision for Dell, "
                           "directly referencing cost predictability, market volatility and duration / volume requirements."
-}
+}}
 """
-
 Only include contract types that are actually relevant.
                 """.strip()
 
