@@ -505,8 +505,6 @@ Return ONLY valid JSON (no markdown, no commentary) with EXACTLY this structure:
   "finalDecisionSummary": "2-3 sentences summarising Dell's contract selection decisions and trade-offs."
 }}
 """
-response = call_llm(prompt)
-# ... your parsing code
 
 Only include contract types that are actually relevant.
                 """.strip()
