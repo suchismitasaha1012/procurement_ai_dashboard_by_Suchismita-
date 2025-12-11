@@ -431,30 +431,32 @@ Recommend suitable **supply-chain contract types** chosen only from:
 
 items_csv = ", ".join(selected_items)
 
-prompt = """
+prompt = f"""
 You are a supply-chain contract expert for Dell Technologies.
 
-Evaluate the most suitable contract types for the following items: {items}.
+Evaluate the most suitable contract types for the following items: {items_csv}.
 
-Your job:
-1. For EACH item, assess:
-   - Cost predictability (High / Medium / Low + 1–2 line explanation)
-   - Market volatility (High / Medium / Low + 1–2 line explanation)
-   - Duration and volume requirements (Short / Medium / Long term; Low / Medium / High volume + explanation)
-2. For EACH item, recommend:
-   - recommendedContract: one of [ "Buy-back Contract", "Revenue-Sharing Contract",
-     "Wholesale Price Contract", "Quantity Flexibility Contract", "Option Contract",
-     "Vendor-Managed Inventory (VMI)", "Cost-Sharing Contract" ].
-   - alternativeContract: another contract from the list.
-   - comparisonSummary: short comparison between recommended and alternative, explicitly
-     referencing cost predictability, market volatility, and duration/volume fit.
-3. Provide an overall finalDecisionSummary (2–3 sentences) explaining Dell’s contract
-   selection decisions and trade-offs.
+For each item, you must:
+- Assess cost predictability (High / Medium / Low + 1-2 line explanation).
+- Assess market volatility (High / Medium / Low + 1-2 line explanation).
+- Assess duration and volume requirements (Short / Medium / Long term and Low / Medium / High volume + explanation).
+- Summarise the overall risk profile in a few short phrases.
 
-Return ONLY valid JSON (no markdown, no commentary) in EXACTLY this structure:
+Then for each item:
+- Recommend a contract type from this list:
+  ["Buy-back Contract", "Revenue-Sharing Contract", "Wholesale Price Contract",
+   "Quantity Flexibility Contract", "Option Contract",
+   "Vendor-Managed Inventory (VMI)", "Cost-Sharing Contract"].
+- Suggest an alternative contract type from the remaining options.
+- Compare the recommended vs alternative contract, explicitly referring to
+  cost predictability, market volatility, and duration/volume fit.
+
+Finally, provide a short overall decision summary for Dell.
+
+Return ONLY valid JSON (no markdown, no commentary) with EXACTLY this structure:
 
 {{
-  "analysisDate": "YYYY-MM-DD",
+  "analysisDate": "2025-12-11",
   "categories": [
     {{
       "name": "Item name exactly as provided",
@@ -465,46 +467,46 @@ Return ONLY valid JSON (no markdown, no commentary) in EXACTLY this structure:
         }},
         "marketVolatility": {{
           "level": "High / Medium / Low",
-          "explanation": "How volatile prices / supply are and how the contract handles it."
+          "explanation": "How volatile prices/supply are and how the contract handles it."
         }},
         "durationAndVolume": {{
           "profile": "Short / Medium / Long term; Low / Medium / High volume",
-          "explanation": "How well the contract fits the duration & volume requirements."
+          "explanation": "How well the contract fits the duration and volume requirements."
         }},
-        "riskProfile": "2–3 short phrases summarising key supply & financial risks."
+        "riskProfile": "2-3 short phrases summarising the key supply and financial risks."
       }},
       "recommendedContract": "One of the allowed contract names",
       "confidence": "High / Medium / Low",
       "justification": "Why this contract is best overall for this item.",
       "alternativeContract": "Another allowed contract name",
-      "comparisonSummary": "Explicit comparison between recommended and alternative for this item."
+      "comparisonSummary": "Comparison between recommended and alternative for this item."
     }}
   ],
   "contractComparison": {{
     "Wholesale Price Contract": {{
-      "description": "1–2 sentences.",
+      "description": "1-2 sentences.",
       "bestFor": "When this contract structure is most appropriate.",
       "advantages": ["Advantage 1", "Advantage 2"],
       "disadvantages": ["Limitation 1"]
     }},
     "Quantity Flexibility Contract": {{
-      "description": "...",
-      "bestFor": "...",
-      "advantages": ["..."],
-      "disadvantages": ["..."]
+      "description": "1-2 sentences.",
+      "bestFor": "When this works best.",
+      "advantages": ["Advantage 1", "Advantage 2"],
+      "disadvantages": ["Limitation 1"]
     }},
     "Vendor-Managed Inventory (VMI)": {{
-      "description": "...",
-      "bestFor": "...",
-      "advantages": ["..."],
-      "disadvantages": ["..."]
+      "description": "1-2 sentences.",
+      "bestFor": "Typical use cases.",
+      "advantages": ["Advantage 1", "Advantage 2"],
+      "disadvantages": ["Limitation 1"]
     }}
   }},
-  "finalDecisionSummary": "2–3 sentences summarising Dell's overall contract choices,
-                           explicitly mentioning cost predictability, market volatility,
-                           and duration/volume requirements."
+  "finalDecisionSummary": "2-3 sentences summarising Dell's contract selection decisions and trade-offs."
 }}
-""".format(items=items_csv)
+"""
+response = call_llm(prompt)
+# ... your parsing code
 
 Only include contract types that are actually relevant.
                 """.strip()
