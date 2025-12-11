@@ -560,7 +560,13 @@ with tabs[2]:
     st.markdown(
         """
         <div class="task-header">
-            <div class="pill">TASK 3 · SUPPLIER SCORECARD</div>
+          st.markdown(
+    """
+    <div class="pill">TASK 3 · SUPPLIER SCORECARD</div>
+    """,
+    unsafe_allow_html=True,
+)
+
             <h2 style="margin-top:0.3rem;margin-bottom:0.1rem;font-size:1.3rem;font-weight:800;">
                 Supplier Evaluation Scorecard
             </h2>
