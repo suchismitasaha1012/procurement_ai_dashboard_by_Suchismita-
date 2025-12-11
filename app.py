@@ -1,159 +1,365 @@
+import os
 import json
+import textwrap
 import streamlit as st
-import pandas as pd
 from openai import OpenAI
 
-# --------------------------------------------------
-# BASIC PAGE CONFIG
-# --------------------------------------------------
-st.set_page_config(
-    page_title="AI-Enabled Procurement Decision Support – Dell",
-    layout="wide",
-)
+# ---------- OpenAI Client ----------
 
-st.title("AI-Enabled Procurement Decision Support")
-st.caption("Company: **Dell Technologies** | Use case: AI-driven supplier intelligence, contract selection, and evaluation scorecards.")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# --------------------------------------------------
-# OPENAI HELPER
-# --------------------------------------------------
-def call_llm(prompt: str, max_tokens: int = 1500) -> str | None:
-    """Call OpenAI Responses API and safely return plain text."""
-    api_key = st.secrets.get("OPENAI_API_KEY")
-    if not api_key:
-        st.error("❌ OPENAI_API_KEY missing in Streamlit Secrets.")
-        return None
+if not OPENAI_API_KEY:
+    st.error(
+        "OPENAI_API_KEY is not set. "
+        "Add it in Streamlit → Manage app → Settings → Secrets."
+    )
+    st.stop()
 
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+
+def call_llm(prompt: str, max_tokens: int = 2800) -> str:
+    """
+    Call OpenAI Responses API and robustly extract the text output.
+    Works even if the SDK output structure changes slightly.
+    """
     try:
-        client = OpenAI(api_key=api_key)
-
         resp = client.responses.create(
-            model="gpt-5-nano",          # test/freemium model
+            model="gpt-4.1-mini",
             input=prompt,
             max_output_tokens=max_tokens,
         )
 
-        # Safely extract text from response
-        if not resp.output:
-            st.error("Model returned empty output.")
-            return None
-        first_block = resp.output[0]
-        if not getattr(first_block, "content", None):
-            st.error("Unexpected model output format (no content).")
-            return None
-        text = first_block.content[0].text
+        # Primary expected path
+        try:
+            text = resp.output[0].content[0].text
+        except Exception:
+            # Fallback: scan all output items and content parts for text
+            parts = []
+            if getattr(resp, "output", None):
+                for item in resp.output:
+                    content = getattr(item, "content", None) or []
+                    for c in content:
+                        t = getattr(c, "text", None)
+                        if t:
+                            parts.append(t)
+            text = "\n".join(parts)
+
+        text = (text or "").strip()
+        if not text:
+            raise ValueError("Model returned empty content")
         return text
+
     except Exception as e:
-        st.error(f"Error calling OpenAI API: {e}")
-        return None
+        raise RuntimeError(f"Error calling OpenAI API: {e}")
 
 
-def extract_json_from_text(text: str) -> dict:
-    """Extract first {...} block from text and parse as JSON."""
-    start = text.find("{")
-    end = text.rfind("}")
-    if start == -1 or end == -1:
-        raise ValueError("No JSON object found in model output.")
-    json_str = text[start : end + 1]
-    return json.loads(json_str)
+def parse_json_str(raw: str):
+    """
+    Safely extract a single JSON object from the model text.
+    Removes anything before the first '{' or after the last '}'.
+    """
+    if not raw:
+        raise ValueError("Empty model response")
+
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        raise ValueError("Model did not return JSON")
+
+    json_str = raw[start : end + 1]
+
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"JSON parsing failed: {e}\nRaw snippet: {json_str[:200]}...")
 
 
-# --------------------------------------------------
-# STATIC DATA (CATEGORIES & PRODUCTS)
-# --------------------------------------------------
-CATEGORIES = [
-    "Electronics & Semiconductors",
-    "Packaging Materials",
-    "Logistics & Transportation",
-    "Chemicals & Materials",
-    "IT Services & Software",
-    "Hardware Components",
-    "Cloud Computing Services",
-    "Network Equipment",
-    "Data Storage Solutions",
-    "Manufacturing Equipment",
-    "Office Supplies",
-    "Energy & Utilities",
+# ---------- Static Data ----------
+
+PROCUREMENT_CATEGORIES = [
+    "Electronics components",
+    "Packaging",
+    "Logistics & transportation",
+    "Chemicals & materials",
+    "IT & software services",
 ]
 
-DELL_PRODUCTS = [
+DELL_ITEMS = [
     "Laptop Components (Displays, Batteries, Keyboards)",
     "Server Components (Processors, Memory, Storage)",
-    "Semiconductor & Microchips",
+    "Semiconductors & Microchips",
     "Printed Circuit Boards (PCBs)",
     "Cooling Systems & Thermal Solutions",
     "Power Supply Units",
     "Networking Equipment (Switches, Routers)",
     "Data Storage Devices (SSDs, HDDs)",
-    "Graphics Processing Units (GPUs)",
     "Packaging Materials",
     "Logistics & Freight Services",
-    "Software Licensing",
     "Cloud Infrastructure Services",
     "IT Support & Consulting",
-    "Security & Compliance Solutions",
-    "Manufacturing Equipment & Tools",
-    "Testing & Quality Assurance Equipment",
-    "Raw Materials (Plastics, Metals, Composites)",
 ]
 
-# --------------------------------------------------
-# SESSION STATE KEYS
-# --------------------------------------------------
-for key, default in [
-    ("selected_category", None),
-    ("market_result", None),
-    ("selected_products", []),
-    ("contract_result", None),
-    ("scorecard_initial", None),
-    ("scorecard_refined", None),
-]:
-    if key not in st.session_state:
-        st.session_state[key] = default
-
-# --------------------------------------------------
-# HELPER FOR COLORS (risk labels etc.)
-# --------------------------------------------------
-def risk_label(score_or_level: str) -> str:
-    """Return colored label HTML for risk."""
-    if score_or_level is None:
-        return ""
-    s = str(score_or_level).lower()
-    try:
-        n = int(score_or_level)
-    except Exception:
-        n = None
-
-    color = "#16a34a"   # green
-    bg = "#dcfce7"
-    label = str(score_or_level)
-
-    if "high" in s or (n is not None and n >= 8):
-        color, bg = "#b91c1c", "#fee2e2"  # red
-    elif "medium" in s or (n is not None and n >= 5):
-        color, bg = "#92400e", "#fef3c7"  # amber
-
-    return f"<span style='background:{bg};color:{color};padding:2px 8px;border-radius:999px;font-size:0.8rem;font-weight:600;'>{label}</span>"
+# ---------- LLM Task Functions ----------
 
 
-def contract_badge(contract_type: str) -> str:
-    colors = {
-        "Buy-back Contract": "#2563eb",
-        "Revenue-Sharing Contract": "#7c3aed",
-        "Wholesale Price Contract": "#16a34a",
-        "Quantity Flexibility Contract": "#ca8a04",
-        "Option Contract": "#dc2626",
-        "VMI": "#4f46e5",
-        "Cost-Sharing Contract": "#0d9488",
-        "Cost-Sharing/Incentive Contract": "#0d9488",
-    }
-    c = colors.get(contract_type, "#4b5563")
-    return f"<span style='background:{c};color:white;padding:4px 10px;border-radius:999px;font-weight:600;font-size:0.8rem;'>{contract_type}</span>"
+def gen_market_intel(category: str):
+    prompt = textwrap.dedent(
+        f"""
+        You are a procurement intelligence analyst for Dell Technologies.
+
+        Task: Analyse the global supplier market for the procurement category:
+        "{category}".
+
+        Output format:
+        Return ONLY ONE JSON object (no markdown, no backticks), with exactly
+        this shape:
+
+        {{
+          "category": "{category}",
+          "marketOverview": "2–3 sentence overview of the global supply market.",
+          "topSuppliers": [
+            {{
+              "rank": 1,
+              "name": "Supplier name",
+              "headquarters": "City, Country",
+              "marketShare": "e.g., ~24% (estimate)",
+              "annualRevenue": "e.g., ~$50B",
+              "keyCapabilities": ["capability 1", "capability 2", "capability 3"],
+              "differentiators": "Short paragraph on unique strengths vs peers.",
+              "dellRelevance": "Why this supplier is relevant to Dell."
+            }}
+          ],
+          "countryRisks": [
+            {{
+              "country": "Country name",
+              "supplierConcentration": "High | Medium | Low",
+              "politicalRisk": {{
+                "score": "1–10",
+                "assessment": "Short explanation",
+                "keyFactors": ["factor 1", "factor 2"]
+              }},
+              "logisticsRisk": {{
+                "score": "1–10",
+                "assessment": "Short explanation",
+                "keyFactors": ["factor 1", "factor 2"]
+              }},
+              "complianceRisk": {{
+                "score": "1–10",
+                "assessment": "Short explanation",
+                "keyFactors": ["factor 1", "factor 2"]
+              }},
+              "esgRisk": {{
+                "score": "1–10",
+                "assessment": "Short explanation",
+                "keyFactors": ["factor 1", "factor 2"]
+              }},
+              "overallRiskLevel": "Low | Medium | High",
+              "mitigation": "2–3 key mitigation strategies"
+            }}
+          ]
+        }}
+
+        Provide:
+        • exactly 5 suppliers in "topSuppliers"
+        • 3 or 4 countries in "countryRisks".
+        """
+    )
+    raw = call_llm(prompt)
+    return parse_json_str(raw)
 
 
-# --------------------------------------------------
-# TABS
-# --------------------------------------------------
+def gen_contract_analysis(selected_items):
+    items_str = ", ".join(selected_items)
+    prompt = textwrap.dedent(
+        f"""
+        You are advising Dell Technologies on supply chain contracts.
+
+        Dell procurement items:
+        {items_str}
+
+        Contract types to consider:
+        - Buy-back Contract
+        - Revenue-Sharing Contract
+        - Wholesale Price Contract
+        - Quantity Flexibility Contract
+        - Option Contract
+        - Vendor-Managed Inventory (VMI)
+        - Cost-Sharing Contract
+
+        For EACH selected item:
+        1. Assess demand pattern, market volatility, and volume flexibility.
+        2. Recommend the most suitable contract type.
+        3. Suggest one alternative contract that could also work.
+
+        RETURN ONLY ONE JSON OBJECT with this exact structure (no markdown):
+
+        {{
+          "categories": [
+            {{
+              "name": "Exact item name",
+              "assessment": {{
+                "demandPattern": "Stable | Seasonal | Highly volatile",
+                "demandReason": "1–2 sentence explanation",
+                "marketCharacteristics": "2–3 sentence description",
+                "volumeFlexibility": "High | Medium | Low",
+                "riskProfile": "Summary of key risks"
+              }},
+              "recommendedContract": "One of the listed contract types",
+              "confidence": "High | Medium | Low",
+              "justification": "3–4 sentence business justification",
+              "alternativeContract": "Another contract type from the list",
+              "implementationConsiderations": [
+                "bullet point 1",
+                "bullet point 2"
+              ],
+              "keyContractClauses": [
+                "clause focus 1",
+                "clause focus 2"
+              ]
+            }}
+          ],
+          "contractComparison": {{
+            "Buy-back Contract": {{
+              "description": "Short description",
+              "bestFor": "When it works best",
+              "advantages": ["adv 1", "adv 2"],
+              "disadvantages": ["risk 1"],
+              "dellExamples": ["Example scenario"]
+            }}
+          }},
+          "procurementRecommendations": [
+            "Overall recommendation 1",
+            "Overall recommendation 2"
+          ]
+        }}
+
+        • Ensure each selected item appears once in "categories".
+        • Do NOT add any commentary outside this JSON.
+        """
+    )
+    raw = call_llm(prompt)
+    return parse_json_str(raw)
+
+
+def gen_scorecards(market_json):
+    suppliers = ", ".join([s["name"] for s in market_json.get("topSuppliers", [])])
+    category = market_json.get("category", "Dell procurement")
+
+    # Initial scorecard
+    prompt1 = textwrap.dedent(
+        f"""
+        You are building a supplier evaluation scorecard for Dell Technologies.
+
+        Suppliers: {suppliers}
+        Category: {category}
+
+        Dimensions (weights in %):
+        - Technical Capability (25)
+        - Quality Performance (20)
+        - Financial Health (20)
+        - ESG Compliance (20)
+        - Innovation Capability (15)
+
+        For each supplier, score each dimension 0–100 and calculate a weighted total.
+
+        RETURN ONLY ONE JSON OBJECT:
+
+        {{
+          "evaluationTitle": "Initial Scorecard",
+          "category": "{category}",
+          "evaluationDate": "YYYY-MM-DD",
+          "dimensions": [
+            {{
+              "name": "Technical Capability",
+              "weight": 25,
+              "description": "Short explanation"
+            }}
+          ],
+          "supplierScores": [
+            {{
+              "supplierName": "Name",
+              "scores": {{
+                "Technical Capability": 85,
+                "Quality Performance": 78,
+                "Financial Health": 90,
+                "ESG Compliance": 75,
+                "Innovation Capability": 82
+              }},
+              "weightedTotal": 81.5,
+              "rating": "Excellent | Good | Average | Poor",
+              "strengths": ["strength 1", "strength 2"],
+              "weaknesses": ["weakness 1"]
+            }}
+          ],
+          "bestSupplier": {{
+            "name": "Best supplier name",
+            "score": 88.2,
+            "reasoning": "Why this supplier is best"
+          }},
+          "conclusion": "Overall recommendation"
+        }}
+
+        Ensure:
+        • weightedTotal is correctly calculated using the weights.
+        • One entry per supplier in "supplierScores".
+        """
+    )
+
+    raw1 = call_llm(prompt1)
+    score1 = parse_json_str(raw1)
+
+    # Refined scorecard with new weights + KPIs
+    prompt2 = textwrap.dedent(
+        f"""
+        Refine this supplier scorecard for Dell.
+
+        Previous scorecard JSON:
+        {json.dumps(score1)}
+
+        New weights:
+        - Technical Capability: 30%
+        - Quality Performance: 25%
+        - ESG Compliance: 25%
+        - Financial Health: 15%
+        - Innovation Capability: 5%
+
+        Add 2–3 KPIs for each dimension.
+
+        RETURN ONLY ONE JSON OBJECT with SAME structure as before, plus:
+
+        dimensions[*].kpis: [
+          {{
+            "name": "KPI name",
+            "description": "What it measures",
+            "importance": "Why this matters for Dell"
+          }}
+        ]
+
+        Keep field names identical. Just update weights, scores, and add KPIs.
+        """
+    )
+
+    raw2 = call_llm(prompt2, max_tokens=3200)
+    score2 = parse_json_str(raw2)
+
+    return score1, score2
+
+
+# ---------- Streamlit UI ----------
+
+st.set_page_config(
+    page_title="AI-Enabled Procurement Decision Support",
+    layout="wide",
+)
+
+st.title("AI-Enabled Procurement Decision Support")
+st.caption(
+    "Company: **Dell Technologies** | Use case: AI-driven supplier intelligence, "
+    "contract selection, and evaluation scorecards."
+)
+
+# Tabs for tasks
 tab1, tab2, tab3 = st.tabs(
     [
         "1️⃣ Supplier Market Intelligence",
@@ -162,478 +368,139 @@ tab1, tab2, tab3 = st.tabs(
     ]
 )
 
-# ==================================================
-# TAB 1 – SUPPLIER MARKET INTELLIGENCE
-# ==================================================
+# Session state
+if "market_json" not in st.session_state:
+    st.session_state.market_json = None
+if "score1" not in st.session_state:
+    st.session_state.score1 = None
+if "score2" not in st.session_state:
+    st.session_state.score2 = None
+
+# ----- Tab 1: Market Intelligence -----
 with tab1:
     st.subheader("Task 1 – Supplier Market Intelligence using GenAI")
-    st.write(
-        "Select a **procurement category** relevant to Dell and generate structured global "
-        "supplier intelligence (top suppliers, capabilities & country-level risks)."
+
+    category = st.selectbox(
+        "Select procurement category",
+        ["-- Select --"] + PROCUREMENT_CATEGORIES,
+        index=0,
     )
 
-    col_sel, col_btn = st.columns([2, 1])
-    with col_sel:
-        st.session_state.selected_category = st.selectbox(
-            "Select procurement category",
-            ["-- Select --"] + CATEGORIES,
-            index=0 if st.session_state.selected_category is None else
-            (["-- Select --"] + CATEGORIES).index(
-                st.session_state.selected_category
-            ) if st.session_state.selected_category in CATEGORIES else 0,
-        )
-    with col_btn:
-        generate_market = st.button(
-            "🔍 Generate Supplier Intelligence",
-            use_container_width=True,
-        )
+    if st.button("Generate Supplier Intelligence", type="primary", disabled=category == "-- Select --"):
+        try:
+            with st.spinner("Calling OpenAI and generating structured supplier insights..."):
+                st.session_state.market_json = gen_market_intel(category)
+                st.success("Supplier market intelligence generated successfully.")
+        except Exception as e:
+            st.error(str(e))
 
-    if generate_market:
-        if (
-            not st.session_state.selected_category
-            or st.session_state.selected_category == "-- Select --"
-        ):
-            st.error("Please choose a category first.")
-        else:
-            category = st.session_state.selected_category
-            with st.spinner("Calling GenAI for market intelligence..."):
-                prompt = f"""
-Analyze supplier market for Dell Technologies in the category: "{category}".
+    data = st.session_state.market_json
+    if data:
+        st.markdown("### Market Overview")
+        st.write(data.get("marketOverview", ""))
 
-Return ONLY valid JSON (no markdown) with the following structure:
-
-{{
-  "category": "{category}",
-  "marketOverview": "2-3 sentences overview of supplier market and trends",
-  "topSuppliers": [
-    {{
-      "rank": 1,
-      "name": "Company name",
-      "headquarters": "City, Country",
-      "marketShare": "e.g., 25%",
-      "annualRevenue": "$ value or 'N/A'",
-      "keyCapabilities": ["cap1","cap2","cap3","cap4"],
-      "differentiators": "1-2 lines about what makes them unique",
-      "dellRelevance": "Why this supplier is relevant for Dell"
-    }}
-  ],
-  "countryRisks": [
-    {{
-      "country": "Country name",
-      "supplierConcentration": "High/Medium/Low",
-      "politicalRisk": {{"score": "1-10", "assessment": "short text", "keyFactors": ["f1","f2"]}},
-      "logisticsRisk": {{"score": "1-10", "assessment": "short text", "keyFactors": ["f1","f2"]}},
-      "complianceRisk": {{"score": "1-10", "assessment": "short text", "keyFactors": ["f1","f2"]}},
-      "esgRisk": {{"score": "1-10", "assessment": "short text", "keyFactors": ["f1","f2"]}},
-      "overallRiskLevel": "High/Medium/Low",
-      "mitigation": "Key mitigation strategies for Dell"
-    }}
-  ]
-}}
-
-Provide **exactly 5** suppliers and **3-4** countries.
-"""
-
-                text = call_llm(prompt, max_tokens=1800)
-                if text:
-                    try:
-                        parsed = extract_json_from_text(text)
-                        if not parsed.get("topSuppliers") or not parsed.get(
-                            "countryRisks"
-                        ):
-                            raise ValueError(
-                                "Missing 'topSuppliers' or 'countryRisks' in JSON."
-                            )
-                        st.session_state.market_result = parsed
-                    except Exception as e:
-                        st.error(f"Failed to parse model output as JSON: {e}")
-                        st.session_state.market_result = None
-
-    market = st.session_state.market_result
-    if market:
-        st.markdown("---")
-        st.markdown(f"### 🌍 Market Overview – {market.get('category','')}")
-        st.write(market.get("marketOverview", ""))
-
-        # Top suppliers
-        st.markdown("#### 📈 Top 5 Global Suppliers")
-        for s in market.get("topSuppliers", []):
-            with st.expander(f"{s.get('rank','?')}. {s.get('name','Unknown Supplier')}"):
-                st.write(f"**Headquarters:** {s.get('headquarters','N/A')}")
-                st.write(f"**Market share:** {s.get('marketShare','N/A')}")
-                st.write(f"**Annual revenue:** {s.get('annualRevenue','N/A')}")
-                st.write("**Key capabilities:**")
-                st.write(", ".join(s.get("keyCapabilities", [])))
-                st.write("**Differentiators:**", s.get("differentiators", ""))
-                st.write("**Dell relevance:**", s.get("dellRelevance", ""))
-
-        # Country risks
-        st.markdown("#### ⚠️ Country-Level Sourcing Risks")
-        for r in market.get("countryRisks", []):
-            st.markdown(f"**{r.get('country','Unknown Country')}**", help=r.get("mitigation",""))
-            cols = st.columns(4)
-            with cols[0]:
-                st.markdown(
-                    "Political<br>"
-                    + risk_label(r.get("politicalRisk", {}).get("score", "N/A")),
-                    unsafe_allow_html=True,
-                )
-            with cols[1]:
-                st.markdown(
-                    "Logistics<br>"
-                    + risk_label(r.get("logisticsRisk", {}).get("score", "N/A")),
-                    unsafe_allow_html=True,
-                )
-            with cols[2]:
-                st.markdown(
-                    "Compliance<br>"
-                    + risk_label(r.get("complianceRisk", {}).get("score", "N/A")),
-                    unsafe_allow_html=True,
-                )
-            with cols[3]:
-                st.markdown(
-                    "ESG<br>"
-                    + risk_label(r.get("esgRisk", {}).get("score", "N/A")),
-                    unsafe_allow_html=True,
-                )
+        st.markdown("### Top Suppliers")
+        for s in data.get("topSuppliers", []):
             st.markdown(
-                "Overall risk: "
-                + risk_label(r.get("overallRiskLevel", "Unknown")),
-                unsafe_allow_html=True,
+                f"**{s['rank']}. {s['name']}** – {s.get('headquarters','')}"
             )
-            st.write("**Mitigation strategy for Dell:**", r.get("mitigation", "—"))
+            st.write("• Market share:", s.get("marketShare", "N/A"))
+            st.write("• Key capabilities:", ", ".join(s.get("keyCapabilities", [])))
+            st.write("• Differentiators:", s.get("differentiators", ""))
+            st.write("• Dell relevance:", s.get("dellRelevance", ""))
             st.markdown("---")
 
-# ==================================================
-# TAB 2 – CONTRACT TYPE RECOMMENDATION
-# ==================================================
+        st.markdown("### Country-Level Sourcing Risks")
+        for r in data.get("countryRisks", []):
+            st.markdown(f"**{r['country']}** – Overall risk: {r.get('overallRiskLevel')}")
+            st.write("Supplier concentration:", r.get("supplierConcentration"))
+            st.write("Political risk:", r.get("politicalRisk", {}).get("assessment"))
+            st.write("Logistics risk:", r.get("logisticsRisk", {}).get("assessment"))
+            st.write("Compliance risk:", r.get("complianceRisk", {}).get("assessment"))
+            st.write("ESG risk:", r.get("esgRisk", {}).get("assessment"))
+            st.write("Mitigation:", r.get("mitigation"))
+            st.markdown("---")
+
+# ----- Tab 2: Contract Recommendation -----
 with tab2:
     st.subheader("Task 2 – GenAI-Supported Contract Selection for Procurement")
-    st.write(
-        "Select one or more **Dell procurement items**. The tool will suggest appropriate "
-        "supply chain contract types (Buy-back, Revenue-Sharing, Wholesale Price, Quantity Flexibility, "
-        "Option, VMI, Cost-Sharing, etc.) for each selected item."
+
+    selected_items = st.multiselect(
+        "Select one or more Dell procurement items",
+        DELL_ITEMS,
     )
 
-    selected_products = st.multiselect(
-        "Select products / services",
-        options=DELL_PRODUCTS,
-        default=st.session_state.selected_products,
-    )
-    st.session_state.selected_products = selected_products
+    if st.button("Analyze Contract Options", type="primary", disabled=len(selected_items) == 0):
+        try:
+            with st.spinner("Analyzing demand, risk and recommending contract types..."):
+                st.session_state.contract_json = gen_contract_analysis(selected_items)
+                st.success("Contract recommendations generated.")
+        except Exception as e:
+            st.error(str(e))
 
-    analyze_contracts = st.button(
-        "📄 Analyze Contract Options", use_container_width=True
-    )
-
-    if analyze_contracts:
-        if not selected_products:
-            st.error("Please select at least one product / service.")
-        else:
-            items = ", ".join(selected_products)
-            with st.spinner("Analyzing best-fit contract types..."):
-                prompt = f"""
-You are a supply chain & procurement expert for Dell Technologies.
-
-Products/services selected:
-{items}
-
-Consider the following contract types:
-- Buy-back Contract
-- Revenue-Sharing Contract
-- Wholesale Price Contract
-- Quantity Flexibility Contract
-- Option Contract
-- Vendor Managed Inventory (VMI)
-- Cost-Sharing Contract
-- Cost-Sharing/Incentive Contract
-
-Return ONLY valid JSON in this structure:
-
-{{
-  "analysisDate": "YYYY-MM-DD",
-  "categories": [
-    {{
-      "name": "product name",
-      "assessment": {{
-        "demandPattern": "Stable/Seasonal/Boom-Bust",
-        "demandReason": "1-2 lines",
-        "marketCharacteristics": "short description",
-        "volumeFlexibility": "High/Medium/Low",
-        "riskProfile": "key risks for Dell"
-      }},
-      "recommendedContract": "contract type from list above",
-      "confidence": "High/Medium/Low",
-      "justification": "3-4 lines on why this contract is preferred",
-      "alternativeContract": "another contract type",
-      "implementationConsiderations": ["c1","c2"],
-      "keyContractClauses": ["cl1","cl2"]
-    }}
-  ],
-  "contractComparison": {{
-    "Buy-back Contract": {{
-      "description": "short description",
-      "bestFor": "when it works best",
-      "advantages": ["a1","a2"],
-      "disadvantages": ["d1"],
-      "dellExamples": ["example use case"]
-    }}
-  }},
-  "procurementRecommendations": ["summary1","summary2"]
-}}
-
-Make sure every selected product appears in categories[].
-"""
-                text = call_llm(prompt, max_tokens=2200)
-                if text:
-                    try:
-                        parsed = extract_json_from_text(text)
-                        st.session_state.contract_result = parsed
-                    except Exception as e:
-                        st.error(f"Failed to parse contract JSON: {e}")
-                        st.session_state.contract_result = None
-
-    contract = st.session_state.contract_result
-    if contract:
-        st.markdown("---")
-        st.markdown("### 🎯 Contract Recommendations by Category")
-        for c in contract.get("categories", []):
-            st.markdown(f"#### {c.get('name','Category')}")
-            st.markdown(
-                contract_badge(c.get("recommendedContract", "N/A")),
-                unsafe_allow_html=True,
-            )
-            st.write("**Confidence:**", c.get("confidence", "N/A"))
-            st.write("**Justification:**", c.get("justification", ""))
-            assessment = c.get("assessment", {})
-            st.write("**Demand pattern:**", assessment.get("demandPattern", ""))
-            st.write(
-                "**Market characteristics:**",
-                assessment.get("marketCharacteristics", ""),
-            )
-            st.write("**Volume flexibility:**", assessment.get("volumeFlexibility", ""))
-            st.write("**Risk profile:**", assessment.get("riskProfile", ""))
-            st.write("**Alternative contract:**", c.get("alternativeContract", ""))
-            if c.get("implementationConsiderations"):
-                st.write("**Implementation considerations:**")
-                for ic in c["implementationConsiderations"]:
-                    st.write(f"- {ic}")
-            if c.get("keyContractClauses"):
-                st.write("**Key contract clauses to emphasise:**")
-                for clause in c["keyContractClauses"]:
-                    st.write(f"- {clause}")
+    contract_json = st.session_state.get("contract_json")
+    if contract_json:
+        st.markdown("### Contract Recommendations by Category")
+        for cat in contract_json.get("categories", []):
+            st.markdown(f"#### {cat['name']}")
+            st.write("**Recommended contract:**", cat.get("recommendedContract"))
+            st.write("**Confidence:**", cat.get("confidence"))
+            st.write("**Justification:**", cat.get("justification"))
+            st.write("**Alternative:**", cat.get("alternativeContract"))
+            st.write("**Implementation considerations:**")
+            for c in cat.get("implementationConsiderations", []):
+                st.write("-", c)
             st.markdown("---")
 
-        if contract.get("procurementRecommendations"):
-            st.markdown("### 📌 Overall Procurement Recommendations")
-            for r in contract["procurementRecommendations"]:
-                st.write(f"- {r}")
+        st.markdown("### Overall Procurement Recommendations")
+        for r in contract_json.get("procurementRecommendations", []):
+            st.write("•", r)
 
-# ==================================================
-# TAB 3 – SUPPLIER EVALUATION SCORECARD
-# ==================================================
+# ----- Tab 3: Scorecard -----
 with tab3:
     st.subheader("Task 3 – GenAI-Enhanced Supplier Evaluation Scorecard")
-    st.write(
-        "This task builds a **two-stage supplier scorecard** for the suppliers identified in Task 1.\n"
-        "- Stage 1: Initial scorecard with base weights.\n"
-        "- Stage 2: Refined scorecard with updated weights and KPIs."
-    )
 
-    col_left, col_right = st.columns([1, 1])
-    with col_left:
-        generate_scores = st.button(
-            "🏅 Generate Supplier Scorecards",
-            use_container_width=True,
-        )
-    with col_right:
-        if not st.session_state.market_result:
-            st.info(
-                "Complete **Task 1: Supplier Market Intelligence** first so we know which suppliers to evaluate."
-            )
+    if st.session_state.market_json is None:
+        st.warning("Please complete **Task 1** first to identify suppliers.")
+    else:
+        if st.button("Generate Supplier Scorecards", type="primary"):
+            try:
+                with st.spinner("Building initial and refined supplier scorecards..."):
+                    s1, s2 = gen_scorecards(st.session_state.market_json)
+                    st.session_state.score1 = s1
+                    st.session_state.score2 = s2
+                    st.success("Scorecards generated.")
+            except Exception as e:
+                st.error(str(e))
 
-    if generate_scores:
-        market = st.session_state.market_result
-        if not market or not market.get("topSuppliers"):
-            st.error("Please complete Task 1 first (no suppliers found).")
-        else:
-            supplier_names = ", ".join(
-                [s.get("name", "Supplier") for s in market["topSuppliers"]]
-            )
-            category = market.get("category", "Dell Procurement Category")
+        score1 = st.session_state.score1
+        score2 = st.session_state.score2
 
-            # --------- First (initial) scorecard ----------
-            with st.spinner("Generating initial supplier scorecard..."):
-                prompt1 = f"""
-You are designing a supplier evaluation scorecard for Dell Technologies.
+        if score1:
+            st.markdown("### Initial Scorecard")
+            st.write(score1.get("conclusion", ""))
 
-Suppliers: {supplier_names}
-Category: {category}
-
-Dimensions and base weights:
-- Technical Capability – 25%
-- Quality Performance – 20%
-- Financial Health – 20%
-- ESG Compliance – 20%
-- Innovation Capability – 15%
-
-For each supplier, score each dimension from 0–100 and compute weightedTotal.
-
-Return ONLY valid JSON in this structure:
-
-{{
-  "evaluationTitle": "Initial Scorecard",
-  "category": "{category}",
-  "evaluationDate": "YYYY-MM-DD",
-  "dimensions": [
-    {{"name": "Technical Capability", "weight": 25, "description": "short description"}},
-    {{"name": "Quality Performance", "weight": 20, "description": "short description"}},
-    {{"name": "Financial Health", "weight": 20, "description": "short description"}},
-    {{"name": "ESG Compliance", "weight": 20, "description": "short description"}},
-    {{"name": "Innovation Capability", "weight": 15, "description": "short description"}}
-  ],
-  "supplierScores": [
-    {{
-      "supplierName": "Supplier name",
-      "scores": {{
-        "Technical Capability": 85,
-        "Quality Performance": 78,
-        "Financial Health": 90,
-        "ESG Compliance": 75,
-        "Innovation Capability": 82
-      }},
-      "weightedTotal": 81.5,
-      "rating": "Excellent/Good/Average/Poor",
-      "strengths": ["s1","s2"],
-      "weaknesses": ["w1"]
-    }}
-  ],
-  "bestSupplier": {{"name": "best", "score": 85, "reasoning": "why best"}},
-  "conclusion": "1-2 lines with recommendation."
-}}
-
-Make sure weightedTotal truly reflects the weights.
-"""
-
-                text1 = call_llm(prompt1, max_tokens=2000)
-                if text1:
-                    try:
-                        initial = extract_json_from_text(text1)
-                        if not initial.get("dimensions") or not initial.get(
-                            "supplierScores"
-                        ):
-                            raise ValueError(
-                                "Missing 'dimensions' or 'supplierScores' in initial scorecard."
-                            )
-                        st.session_state.scorecard_initial = initial
-                    except Exception as e:
-                        st.error(f"Failed to parse initial scorecard: {e}")
-                        st.session_state.scorecard_initial = None
-
-            initial = st.session_state.scorecard_initial
-            if initial:
-                # --------- Refined scorecard ----------
-                with st.spinner("Refining scorecard with new weights & KPIs..."):
-                    prompt2 = f"""
-Refine the following Dell supplier scorecard with new weights and KPIs.
-
-New weights:
-- Technical Capability – 30%
-- Quality Performance – 25%
-- ESG Compliance – 25%
-- Financial Health – 15%
-- Innovation Capability – 5%
-
-For each dimension, add 2-3 KPIs with name, description and importance.
-
-Previous scorecard JSON:
-{json.dumps(initial)}
-
-Return ONLY valid JSON with the SAME structure as before, but:
-- update weights
-- recalculate weightedTotal
-- add "kpis" list into each dimension item:
-
-"kpis": [
-  {{"name": "KPI name", "description": "what it measures", "importance": "why important"}}
-]
-
-"""
-                    text2 = call_llm(prompt2, max_tokens=2200)
-                    if text2:
-                        try:
-                            refined = extract_json_from_text(text2)
-                            st.session_state.scorecard_refined = refined
-                        except Exception as e:
-                            st.error(f"Failed to parse refined scorecard: {e}")
-                            st.session_state.scorecard_refined = None
-
-    # ---------- Render scorecards ----------
-    initial = st.session_state.scorecard_initial
-    refined = st.session_state.scorecard_refined
-
-    if initial:
-        st.markdown("---")
-        st.markdown("### 🟢 Initial Scorecard")
-        st.write(
-            f"**Category:** {initial.get('category','')}  |  **Date:** {initial.get('evaluationDate','')}"
-        )
-        dims = initial.get("dimensions", [])
-        scores = initial.get("supplierScores", [])
-
-        if scores:
-            # Sort by weighted total descending
-            scores_sorted = sorted(
-                scores, key=lambda s: s.get("weightedTotal", 0), reverse=True
-            )
-            df_rows = []
-            for s in scores_sorted:
-                row = {"Supplier": s.get("supplierName", "")}
+            # Simple table of scores
+            dims = [d["name"] for d in score1.get("dimensions", [])]
+            cols = ["Supplier"] + dims + ["Weighted total", "Rating"]
+            rows = []
+            for s in score1.get("supplierScores", []):
+                row = [s["supplierName"]]
                 for d in dims:
-                    name = d.get("name", "")
-                    row[name] = s.get("scores", {}).get(name, "")
-                row["Weighted Total"] = s.get("weightedTotal", 0)
-                row["Rating"] = s.get("rating", "")
-                df_rows.append(row)
-            df = pd.DataFrame(df_rows)
-            st.dataframe(df, use_container_width=True)
+                    row.append(s["scores"].get(d))
+                row.append(s.get("weightedTotal"))
+                row.append(s.get("rating"))
+                rows.append(row)
+            st.table([cols] + rows)
 
-        if initial.get("bestSupplier"):
-            best = initial["bestSupplier"]
-            st.markdown(
-                f"**Best supplier:** {best.get('name','')} "
-                f"– Score: {best.get('score','')}  \n"
-                f"{best.get('reasoning','')}"
-            )
-        if initial.get("conclusion"):
-            st.markdown(f"**Conclusion:** {initial['conclusion']}")
-
-    if refined:
-        st.markdown("---")
-        st.markdown("### 🔵 Refined Scorecard (Updated Weights & KPIs)")
-        st.write(
-            f"**Category:** {refined.get('category','')}  |  **Date:** {refined.get('evaluationDate','')}"
-        )
-
-        dims_r = refined.get("dimensions", [])
-        if dims_r:
-            for d in dims_r:
+        if score2:
+            st.markdown("### Refined Scorecard (with KPIs)")
+            for d in score2.get("dimensions", []):
+                st.markdown(f"**{d['name']} – weight {d.get('weight')}%**")
+                for k in d.get("kpis", []):
+                    st.write(f"- {k['name']}: {k['description']} ({k['importance']})")
+            best = score2.get("bestSupplier")
+            if best:
                 st.markdown(
-                    f"#### {d.get('name','Dimension')} – {d.get('weight',0)}%"
+                    f"**Best supplier (refined): {best['name']} – score {best['score']}**"
                 )
-                st.write(d.get("description", ""))
-                if d.get("kpis"):
-                    st.write("**Key KPIs:**")
-                    for k in d["kpis"]:
-                        st.write(
-                            f"- **{k.get('name','KPI')}** – {k.get('description','')} "
-                            f"(_Importance: {k.get('importance','')}_)"
-                        )
-
-        if refined.get("bestSupplier"):
-            best = refined["bestSupplier"]
-            st.markdown(
-                f"**Best supplier (refined):** {best.get('name','')} – "
-                f"Score: {best.get('score','')}  \n"
-                f"{best.get('reasoning','')}"
-            )
