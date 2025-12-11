@@ -429,73 +429,83 @@ Recommend suitable **supply-chain contract types** chosen only from:
 - Vendor-Managed Inventory (VMI)
 - Cost-Sharing / Incentive Contract
 
-prompt = f"""
-You are a supply-chain contract expert for Dell Technologies.
-Evaluate the most suitable contract types for these items: {items}.
+items_csv = ", ".join(selected_items)
 
-Return ONLY valid JSON (no markdown), exactly in this shape:
+prompt = """
+You are a supply-chain contract expert for Dell Technologies.
+
+Evaluate the most suitable contract types for the following items: {items}.
+
+Your job:
+1. For EACH item, assess:
+   - Cost predictability (High / Medium / Low + 1–2 line explanation)
+   - Market volatility (High / Medium / Low + 1–2 line explanation)
+   - Duration and volume requirements (Short / Medium / Long term; Low / Medium / High volume + explanation)
+2. For EACH item, recommend:
+   - recommendedContract: one of [ "Buy-back Contract", "Revenue-Sharing Contract",
+     "Wholesale Price Contract", "Quantity Flexibility Contract", "Option Contract",
+     "Vendor-Managed Inventory (VMI)", "Cost-Sharing Contract" ].
+   - alternativeContract: another contract from the list.
+   - comparisonSummary: short comparison between recommended and alternative, explicitly
+     referencing cost predictability, market volatility, and duration/volume fit.
+3. Provide an overall finalDecisionSummary (2–3 sentences) explaining Dell’s contract
+   selection decisions and trade-offs.
+
+Return ONLY valid JSON (no markdown, no commentary) in EXACTLY this structure:
 
 {{
   "analysisDate": "YYYY-MM-DD",
   "categories": [
     {{
-      "name": "Laptop Components (Displays, Batteries, Keyboards)",
+      "name": "Item name exactly as provided",
       "assessment": {{
-        "demandPattern": "Stable / Seasonal / Highly seasonal",
         "costPredictability": {{
           "level": "High / Medium / Low",
-          "explanation": "1–2 sentences on how predictable total cost is under the recommended contract."
+          "explanation": "Why cost is or is not predictable under this contract."
         }},
         "marketVolatility": {{
           "level": "High / Medium / Low",
-          "explanation": "1–2 sentences on how volatile prices / supply are and how the contract handles it."
+          "explanation": "How volatile prices / supply are and how the contract handles it."
         }},
         "durationAndVolume": {{
-          "profile": "Short-term / Medium-term / Long-term, Low / Medium / High volume",
-          "explanation": "1–2 sentences on how well the contract fits duration & volume requirements."
+          "profile": "Short / Medium / Long term; Low / Medium / High volume",
+          "explanation": "How well the contract fits the duration & volume requirements."
         }},
-        "riskProfile": "Key supply and financial risks in 2–3 short phrases."
+        "riskProfile": "2–3 short phrases summarising key supply & financial risks."
       }},
-      "recommendedContract": "Quantity Flexibility Contract",
+      "recommendedContract": "One of the allowed contract names",
       "confidence": "High / Medium / Low",
-      "justification": "Short paragraph explaining why this contract is best overall for this category.",
-      "alternativeContract": "Vendor-Managed Inventory (VMI)",
-      "comparisonSummary": "1–2 sentences explicitly comparing recommended vs alternative for this category "
-                           "with respect to cost predictability, market volatility and duration / volume fit.",
-      "implementationConsiderations": [
-        "Practical steps needed to implement this contract for Dell."
-      ],
-      "keyContractClauses": [
-        "Most important clauses Dell must negotiate."
-      ]
+      "justification": "Why this contract is best overall for this item.",
+      "alternativeContract": "Another allowed contract name",
+      "comparisonSummary": "Explicit comparison between recommended and alternative for this item."
     }}
   ],
-
   "contractComparison": {{
-    "Quantity Flexibility Contract": {{
-      "description": "1–2 sentences describing the contract.",
-      "bestFor": "Which product / demand situations this works best for.",
-      "costPredictability": "High / Medium / Low – with a one-line reason.",
-      "marketVolatility": "How well it handles volatile prices / supply.",
-      "durationAndVolumeFit": "What duration / volume profile it fits best.",
+    "Wholesale Price Contract": {{
+      "description": "1–2 sentences.",
+      "bestFor": "When this contract structure is most appropriate.",
       "advantages": ["Advantage 1", "Advantage 2"],
       "disadvantages": ["Limitation 1"]
+    }},
+    "Quantity Flexibility Contract": {{
+      "description": "...",
+      "bestFor": "...",
+      "advantages": ["..."],
+      "disadvantages": ["..."]
     }},
     "Vendor-Managed Inventory (VMI)": {{
       "description": "...",
       "bestFor": "...",
-      "costPredictability": "...",
-      "marketVolatility": "...",
-      "durationAndVolumeFit": "...",
       "advantages": ["..."],
       "disadvantages": ["..."]
     }}
   }},
-
-  "finalDecisionSummary": "2–3 sentences summarising the overall contract selection decision for Dell, "
-                          "directly referencing cost predictability, market volatility and duration / volume requirements."
+  "finalDecisionSummary": "2–3 sentences summarising Dell's overall contract choices,
+                           explicitly mentioning cost predictability, market volatility,
+                           and duration/volume requirements."
 }}
-"""
+""".format(items=items_csv)
+
 Only include contract types that are actually relevant.
                 """.strip()
 
