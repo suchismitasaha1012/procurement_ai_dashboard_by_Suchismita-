@@ -336,153 +336,228 @@ Structure:
 # ===================================================================== #
 
 with tabs[1]:
-    st.markdown("""
+    st.markdown(
+        """
         <div class="task-header">
             <div class="pill">TASK 2 · CONTRACT SELECTION</div>
             <h2 style="margin-top:0.3rem;margin-bottom:0.1rem;font-size:1.3rem;font-weight:800;">
                 GenAI-Supported Contract Type Recommendation
             </h2>
             <p style="margin:0.2rem 0;color:#475569;font-size:0.9rem;">
-                Recommend optimal supply-chain contract types for Dell items.
+                Select one or more Dell procurement items. The tool evaluates cost predictability,
+                market volatility, and duration / volume requirements, and then recommends the most
+                suitable supply chain contract type for each item.
+                <br/>
+                <span style="font-size:0.84rem;color:#64748b;">
+                Contract universe is restricted to: Buy-back, Revenue-Sharing, Wholesale Price,
+                Quantity Flexibility, Option, VMI, and Cost-Sharing / Incentive Contracts.
+                </span>
             </p>
         </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="tiny-label">DELL PROCUREMENT ITEMS</div>', unsafe_allow_html=True)
-
-    selected_products = st.multiselect(
-        "Select items",
-        task2_products,
-        label_visibility="collapsed",
+        """,
+        unsafe_allow_html=True,
     )
 
+    # ---- Input card ----
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="tiny-label">DELL PROCUREMENT ITEMS</div>', unsafe_allow_html=True)
+    selected_products = st.multiselect(
+        "Select products/services",
+        options=task2_products,
+        label_visibility="collapsed",
+    )
     st.markdown("</div>", unsafe_allow_html=True)
 
     analyze_btn = st.button("📑 Analyze Contract Options", use_container_width=True)
 
+    # ---- Call LLM when button is pressed ----
     if analyze_btn:
         if not selected_products:
-            st.warning("Please select at least one item.")
+            st.warning("Please select at least one procurement item.")
         else:
-            products_csv = ", ".join(selected_products)
+            items_csv = ", ".join(selected_products)
 
-            with st.spinner("Generating contract recommendations…"):
-
+            with st.spinner("Calling GenAI for contract analysis…"):
                 prompt2 = f"""
-Return ONLY valid JSON.
+You are a supply-chain contract expert for Dell Technologies.
 
-Structure:
+Your ONLY allowed contract types are:
+1. "Buy-back Contract"
+2. "Revenue-Sharing Contract"
+3. "Wholesale Price Contract"
+4. "Quantity Flexibility Contract"
+5. "Option Contract"
+6. "VMI (Vendor Managed Inventory)"
+7. "Cost-Sharing or Incentive Contracts"
+
+Do NOT invent any new contract names. Always use one of the exact names above.
+
+Evaluate the most suitable contract types for the following Dell procurement items:
+{items_csv}.
+
+For each item you must:
+1. Assess:
+   - costPredictability: level ("High" / "Medium" / "Low") + 1–2 line explanation
+   - marketVolatility: level ("High" / "Medium" / "Low") + explanation
+   - durationAndVolume: profile ("Short / Medium / Long term; Low / Medium / High volume") + explanation
+
+2. Compare the RELEVANT contract types (from the 7 allowed types) for this item.
+   For each compared contract type give:
+   - suitability: "High" / "Medium" / "Low"
+   - pros: 2–3 bullet points
+   - cons: 1–2 bullet points
+
+3. Select:
+   - recommendedContract: ONE best contract type from the list
+   - alternativeContract: ONE second-best contract type
+   - finalDecision: 2–3 sentence justification referring explicitly to cost predictability,
+     market volatility, and duration/volume fit.
+
+Finally, provide a short generic summary for each contract type explaining:
+- whenToUse: typical use case (1–2 sentences)
+- keyRisks: main risks/pitfalls (1–2 sentences)
+
+Return ONLY valid JSON (no markdown, no commentary) with EXACTLY this structure:
+
 {{
-  "analysisDate": "{date.today()}",
-  "categories": [
+  "analysisDate": "{date.today().isoformat()}",
+  "items": [
     {{
-      "name": "Item",
+      "name": "Item name exactly as in input",
       "assessment": {{
-        "costPredictability": {{"level":"High","explanation":"text"}},
-        "marketVolatility":   {{"level":"Low","explanation":"text"}},
-        "durationAndVolume":  {{"profile":"Long; High","explanation":"text"}},
-        "riskProfile": "text"
+        "costPredictability": {{
+          "level": "High",
+          "explanation": "text"
+        }},
+        "marketVolatility": {{
+          "level": "Medium",
+          "explanation": "text"
+        }},
+        "durationAndVolume": {{
+          "profile": "Long term; High volume",
+          "explanation": "text"
+        }}
       }},
-      "recommendedContract": "Type",
-      "confidence": "High/Medium/Low",
-      "justification": "text",
-      "alternativeContract": "Type",
-      "comparisonSummary": "text"
+      "contractComparison": [
+        {{
+          "type": "Wholesale Price Contract",
+          "suitability": "High",
+          "pros": ["point 1","point 2"],
+          "cons": ["point 1"]
+        }}
+      ],
+      "recommendedContract": "Wholesale Price Contract",
+      "alternativeContract": "Quantity Flexibility Contract",
+      "finalDecision": "2-3 sentence justification"
     }}
   ],
-  "finalDecisionSummary": "text"
+  "contractTypeSummary": {{
+    "Buy-back Contract": {{
+      "whenToUse": "short text",
+      "keyRisks": "short text"
+    }},
+    "Revenue-Sharing Contract": {{
+      "whenToUse": "short text",
+      "keyRisks": "short text"
+    }},
+    "Wholesale Price Contract": {{
+      "whenToUse": "short text",
+      "keyRisks": "short text"
+    }},
+    "Quantity Flexibility Contract": {{
+      "whenToUse": "short text",
+      "keyRisks": "short text"
+    }},
+    "Option Contract": {{
+      "whenToUse": "short text",
+      "keyRisks": "short text"
+    }},
+    "VMI (Vendor Managed Inventory)": {{
+      "whenToUse": "short text",
+      "keyRisks": "short text"
+    }},
+    "Cost-Sharing or Incentive Contracts": {{
+      "whenToUse": "short text",
+      "keyRisks": "short text"
+    }}
+  }}
 }}
-"""
+                """.strip()
 
-                raw = call_llm(prompt2)
+                raw2 = call_llm(prompt2)
 
                 try:
-                    contract_data = parse_json_from_text(raw)
+                    contract_data = parse_json_from_text(raw2)
                     st.session_state.contract_data = contract_data
-                except:
-                    st.error("❌ LLM returned invalid JSON.")
-                    st.caption(raw)
+                except Exception as e:
+                    st.error(f"Could not parse model output as JSON: {e}")
+                    st.caption(raw2)
 
-    # ------------- DISPLAY OUTPUT ------------- #
-
+    # ---- Display results ----
     contract_data = st.session_state.contract_data
-
     if contract_data:
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown("<div class='section-title'>📌 Contract Recommendations</div>", unsafe_allow_html=True)
+        st.markdown('<div class="section-title">📌 Contract Recommendations</div>', unsafe_allow_html=True)
+        st.caption(f"Analysis date: {contract_data.get('analysisDate','')}")
 
-        for c in contract_data.get("categories", []):
-            st.subheader(c.get("name", "Item"))
+        # Per-item analysis
+        for item in contract_data.get("items", []):
+            name = item.get("name", "Item")
+            assess = item.get("assessment", {})
+            cp = assess.get("costPredictability", {}) or {}
+            mv = assess.get("marketVolatility", {}) or {}
+            dv = assess.get("durationAndVolume", {}) or {}
 
-            col1, col2 = st.columns(2)
+            st.markdown(f"### 🔹 {name}")
 
-            with col1:
-                st.markdown("**Recommended Contract**")
-                st.write(c.get("recommendedContract", "N/A"))
-                st.write("**Confidence:** " + c.get("confidence", "N/A"))
-                st.write("**Why this works:**")
-                st.write(c.get("justification", ""))
+            # Assessment
+            st.markdown("**1. Demand & risk assessment**")
+            st.markdown(
+                f"- **Cost predictability:** {cp.get('level','')} – {cp.get('explanation','')}\n"
+                f"- **Market volatility:** {mv.get('level','')} – {mv.get('explanation','')}\n"
+                f"- **Duration & volume:** {dv.get('profile','')} – {dv.get('explanation','')}"
+            )
 
-            with col2:
-                st.markdown("**Alternative Contract**")
-                st.write(c.get("alternativeContract", "N/A"))
-                st.write("**Comparison Summary:**")
-                st.write(c.get("comparisonSummary", ""))
+            # Comparison of contract types
+            st.markdown("**2. Comparison of relevant contract types**")
+            for cc in item.get("contractComparison", []):
+                ctype = cc.get("type", "")
+                suitability = cc.get("suitability", "")
+                pros = cc.get("pros", []) or []
+                cons = cc.get("cons", []) or []
+                st.markdown(f"- **{ctype}** (suitability: {suitability})")
+                if pros:
+                    st.markdown("  - Pros: " + "; ".join(pros))
+                if cons:
+                    st.markdown("  - Cons: " + "; ".join(cons))
+
+            # Final decision
+            st.markdown("**3. Final contract selection**")
+            st.markdown(
+                f"- ✅ **Recommended contract:** {item.get('recommendedContract','')}\n"
+                f"- 🔁 **Alternative contract:** {item.get('alternativeContract','')}\n\n"
+                f"{item.get('finalDecision','')}"
+            )
 
             st.markdown("---")
 
-        st.subheader("🏁 Final Recommendation Summary")
-        st.write(contract_data.get("finalDecisionSummary", ""))
-
         st.markdown("</div>", unsafe_allow_html=True)
 
-# ----------------- HELPER: ensure weighted totals & ratings ------------ #
-
-def ensure_weighted_totals_and_ratings(scorecard: dict) -> dict:
-    """
-    Make sure each supplier in a scorecard has 'weightedTotal' and 'rating'.
-    If the model skipped them or returned null, compute them from the
-    dimension scores and weights and assign a rating bucket.
-    """
-    if not scorecard:
-        return scorecard
-
-    dimensions = scorecard.get("dimensions", [])
-    # map: dimension name -> weight (float)
-    dim_weights = {
-        d.get("name"): float(d.get("weight", 0)) for d in dimensions if d.get("name")
-    }
-    total_weight = sum(dim_weights.values()) or 1.0
-
-    for s in scorecard.get("supplierScores", []):
-        scores = s.get("scores", {}) or {}
-
-        # ----- Weighted total -----
-        if s.get("weightedTotal") in (None, "", 0):
-            w_sum = 0.0
-            for d_name, w in dim_weights.items():
-                val = scores.get(d_name)
-                if isinstance(val, (int, float)):
-                    w_sum += val * w
-            # Normalise to 0–10 scale
-            s["weightedTotal"] = round(w_sum / total_weight, 3)
-
-        # ----- Rating bucket -----
-        if not s.get("rating"):
-            wt = s.get("weightedTotal", 0)
-            # Thresholds assuming 0–10 weightedTotal
-            if wt >= 9:
-                rating = "Excellent"
-            elif wt >= 8:
-                rating = "Good"
-            elif wt >= 7:
-                rating = "Average"
-            else:
-                rating = "Poor"
-            s["rating"] = rating
-
-    return scorecard
+        # ---- Overall contract type summary ----
+        summary = contract_data.get("contractTypeSummary", {})
+        if summary:
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            st.markdown('<div class="section-title">📘 Contract Type Summary (Cheat Sheet)</div>', unsafe_allow_html=True)
+            for ctype, info in summary.items():
+                when = (info or {}).get("whenToUse", "")
+                risks = (info or {}).get("keyRisks", "")
+                st.markdown(f"**{ctype}**")
+                if when:
+                    st.markdown(f"- _When to use_: {when}")
+                if risks:
+                    st.markdown(f"- _Key risks_: {risks}")
+                st.markdown("")
+            st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ===================================================================== #
