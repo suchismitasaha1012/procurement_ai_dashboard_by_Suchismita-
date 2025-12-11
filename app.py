@@ -437,6 +437,54 @@ Structure:
 
         st.markdown("</div>", unsafe_allow_html=True)
 
+# ----------------- HELPER: ensure weighted totals & ratings ------------ #
+
+def ensure_weighted_totals_and_ratings(scorecard: dict) -> dict:
+    """
+    Make sure each supplier in a scorecard has 'weightedTotal' and 'rating'.
+    If the model skipped them or returned null, compute them from the
+    dimension scores and weights and assign a rating bucket.
+    """
+    if not scorecard:
+        return scorecard
+
+    dimensions = scorecard.get("dimensions", [])
+    # map: dimension name -> weight (float)
+    dim_weights = {
+        d.get("name"): float(d.get("weight", 0)) for d in dimensions if d.get("name")
+    }
+    total_weight = sum(dim_weights.values()) or 1.0
+
+    for s in scorecard.get("supplierScores", []):
+        scores = s.get("scores", {}) or {}
+
+        # ----- Weighted total -----
+        if s.get("weightedTotal") in (None, "", 0):
+            w_sum = 0.0
+            for d_name, w in dim_weights.items():
+                val = scores.get(d_name)
+                if isinstance(val, (int, float)):
+                    w_sum += val * w
+            # Normalise to 0–10 scale
+            s["weightedTotal"] = round(w_sum / total_weight, 3)
+
+        # ----- Rating bucket -----
+        if not s.get("rating"):
+            wt = s.get("weightedTotal", 0)
+            # Thresholds assuming 0–10 weightedTotal
+            if wt >= 9:
+                rating = "Excellent"
+            elif wt >= 8:
+                rating = "Good"
+            elif wt >= 7:
+                rating = "Average"
+            else:
+                rating = "Poor"
+            s["rating"] = rating
+
+    return scorecard
+
+
 # ===================================================================== #
 #                               TASK 3                                  #
 # ===================================================================== #
@@ -458,6 +506,7 @@ with tabs[2]:
         unsafe_allow_html=True,
     )
 
+    # Need Task 1 results first
     market_data = st.session_state.market_data
     if not market_data or not market_data.get("topSuppliers"):
         st.info("Run **Task 1 – Supplier Market Intelligence** first to identify suppliers.")
@@ -475,6 +524,8 @@ with tabs[2]:
 
     score_btn = st.button("🏅 Generate Scorecards", use_container_width=True)
 
+    # ------------------- Generate scorecards via LLM ------------------- #
+
     if score_btn:
         # ---------- INITIAL SCORECARD ----------
         with st.spinner("Generating initial scorecard…"):
@@ -491,8 +542,8 @@ Create an initial scorecard with **5 evaluation dimensions**:
 - ESG Compliance (weight 20%)
 - Innovation Capability (weight 15%)
 
-For each supplier, assign 0-10 scores on each dimension, and compute a numeric
-`weightedTotal` (0-10) using the weights above. Also assign a textual `rating`
+For each supplier, assign 0–10 scores on each dimension, and compute a numeric
+`weightedTotal` (0–10) using the weights above. Also assign a textual `rating`
 ("Excellent", "Good", "Average", "Poor").
 
 Return **ONLY valid JSON**, no prose, with this structure:
@@ -576,19 +627,17 @@ Do not include any explanation text or markdown.
                 st.error(f"Could not parse refined scorecard JSON: {e}")
                 st.caption(raw_refined)
 
-    # ----------------------------------------------------------------- #
-    #                     DISPLAY SCORECARDS                            #
-    # ----------------------------------------------------------------- #
+    # ------------------------ DISPLAY SECTION -------------------------- #
 
     score_initial = st.session_state.score_initial
     score_refined = st.session_state.score_refined
 
+    # ---------- Initial Scorecard table & summary ---------- #
     if score_initial:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown("### 🟢 Initial Scorecard", unsafe_allow_html=True)
         st.caption(f"{category} • {score_initial.get('evaluationDate', '')}")
 
-        # Build dataframe
         initial_rows = []
         for s in score_initial.get("supplierScores", []):
             row = {"Supplier": s.get("supplierName", "")}
@@ -608,7 +657,6 @@ Do not include any explanation text or markdown.
             )
             st.dataframe(df_initial, use_container_width=True, height=260)
 
-        # Best supplier summary
         if score_initial.get("bestSupplier"):
             best = score_initial["bestSupplier"]
             st.markdown("#### 🏆 Best Supplier (Initial Scorecard)")
@@ -619,7 +667,7 @@ Do not include any explanation text or markdown.
                 st.write(best["reasoning"])
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # --------- Refined Scorecard --------- #
+    # ---------- Refined Scorecard table, best supplier & KPIs ---------- #
     if score_refined:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown("### 🔵 Refined Scorecard (with KPIs)", unsafe_allow_html=True)
@@ -644,7 +692,6 @@ Do not include any explanation text or markdown.
             )
             st.dataframe(df_refined, use_container_width=True, height=260)
 
-        # Best supplier after refinement
         if score_refined.get("bestSupplier"):
             best2 = score_refined["bestSupplier"]
             st.markdown("#### 🥇 Best Supplier (Refined Scorecard)")
@@ -654,7 +701,7 @@ Do not include any explanation text or markdown.
             if best2.get("reasoning"):
                 st.write(best2["reasoning"])
 
-        # Dimension KPIs expander – robust to different formats
+        # Dimension KPIs – robust handling
         with st.expander("📊 Dimension KPIs used in refined scorecard", expanded=False):
             for dim in score_refined.get("dimensions", []):
                 dname = dim.get("name", "Dimension")
@@ -668,7 +715,6 @@ Do not include any explanation text or markdown.
                     kpis = [kpis]
 
                 for kpi in kpis:
-                    # Sometimes model may send strings instead of dicts
                     if isinstance(kpi, dict):
                         name = kpi.get("name", "KPI")
                         desc = kpi.get("description", "")
@@ -678,7 +724,7 @@ Do not include any explanation text or markdown.
                             line += f"  \n  _Why it matters_: {imp}"
                         st.markdown(line)
                     else:
-                        # Fallback: plain string
+                        # Fallback if the model just returned a string
                         st.markdown(f"- {kpi}")
 
         st.markdown("</div>", unsafe_allow_html=True)
