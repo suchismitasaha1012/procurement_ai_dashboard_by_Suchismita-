@@ -635,60 +635,87 @@ Do not include any explanation text or markdown.
 
     if score_initial:
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown(
-            f"### 🟢 Initial Scorecard  \n"
-            f"*{score_initial.get('category','')} · {score_initial.get('evaluationDate','')}*",
+            # ---------- INITIAL SCORECARD ----------
+    st.markdown("### 🟢 Initial Scorecard")
+
+    st.caption(
+        f"{category} · {score_initial.get('evaluationDate', '')}"
+    )
+
+    # Build a flat dataframe for the initial scorecard
+    initial_rows = []
+    for s in score_initial.get("supplierScores", []):
+        row = {"Supplier": s.get("supplierName", "")}
+        # Add each dimension score as a column
+        for dim in score_initial.get("dimensions", []):
+            dim_name = dim.get("name")
+            if dim_name:
+                row[dim_name] = s.get("scores", {}).get(dim_name)
+        row["Weighted total"] = s.get("weightedTotal")
+        row["Rating"] = s.get("rating")
+        initial_rows.append(row)
+
+    if initial_rows:
+        df_initial = (
+            pd.DataFrame(initial_rows)
+            .sort_values("Weighted total", ascending=False)
+            .reset_index(drop=True)
         )
 
-        # Build dataframe
-        dims = [d["name"] for d in score_initial.get("dimensions", [])]
-        rows = []
-        for s in score_initial.get("supplierScores", []):
-            row = {"Supplier": s["supplierName"]}
-            for d in dims:
-                row[d] = s["scores"].get(d, 0)
-            row["Weighted total"] = s.get("weightedTotal", 0)
-            row["Rating"] = s.get("rating", "")
-            rows.append(row)
+        st.dataframe(
+            df_initial,
+            use_container_width=True,
+            height=260,
+        )
 
-        df_initial = pd.DataFrame(rows).sort_values("Weighted total", ascending=False)
+    # Best-supplier call-out for the initial scorecard
+    if score_initial.get("bestSupplier"):
+        best = score_initial["bestSupplier"]
+        st.markdown("#### 🏆 Best Supplier (Initial Scorecard)")
+        st.markdown(
+            f"**{best.get('name', '')}** — overall score **{best.get('score', '')}**"
+        )
+        if best.get("reasoning"):
+            st.write(best["reasoning"])
 
-st.dataframe(
-    df_initial,
-    use_container_width=True,
-    height=260,
-)
+    # ---------- REFINED SCORECARD ----------
+    st.markdown("### 🔵 Refined Scorecard (with KPIs)")
 
-        if score_initial.get("bestSupplier"):
-            best = score_initial["bestSupplier"]
-            st.markdown("---")
-            st.markdown(
-                f"**🏆 Recommended supplier:** {best.get('name','')} "
-                f"(score {best.get('score','')})"
-            )
-            st.write(best.get("reasoning", ""))
-        st.markdown("</div>", unsafe_allow_html=True)
+    st.caption(
+        f"{category} · {score_refined.get('evaluationDate', '')}"
+    )
 
-    if score_refined:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown("### 🔵 Refined Scorecard (with KPIs)")
+    refined_rows = []
+    for s in score_refined.get("supplierScores", []):
+        row = {"Supplier": s.get("supplierName", "")}
         for dim in score_refined.get("dimensions", []):
-            st.markdown(
-                f"**{dim.get('name','')} – weight {dim.get('weight',0)}%**  \n"
-                f"{dim.get('description','')}"
-            )
-            for kpi in dim.get("kpis", []):
-                st.markdown(
-                    f"- **{kpi.get('name','')}** – {kpi.get('description','')} "
-                    f"*(Why it matters: {kpi.get('importance','')})*"
-                )
-            st.markdown("")
-        if score_refined.get("bestSupplier"):
-            best2 = score_refined["bestSupplier"]
-            st.markdown("---")
-            st.markdown(
-                f"**🏅 Best supplier after refinement:** {best2.get('name','')} "
-                f"(score {best2.get('score','')})"
-            )
-            st.write(best2.get("reasoning", ""))
-        st.markdown("</div>", unsafe_allow_html=True)
+            dim_name = dim.get("name")
+            if dim_name:
+                row[dim_name] = s.get("scores", {}).get(dim_name)
+        row["Weighted total"] = s.get("weightedTotal")
+        row["Rating"] = s.get("rating")
+        refined_rows.append(row)
+
+    if refined_rows:
+        df_refined = (
+            pd.DataFrame(refined_rows)
+            .sort_values("Weighted total", ascending=False)
+            .reset_index(drop=True)
+        )
+
+        st.dataframe(
+            df_refined,
+            use_container_width=True,
+            height=260,
+        )
+
+    # Optional: show best supplier for refined scorecard
+    if score_refined.get("bestSupplier"):
+        best2 = score_refined["bestSupplier"]
+        st.markdown("#### 🥇 Best Supplier (Refined Scorecard)")
+        st.markdown(
+            f"**{best2.get('name', '')}** — overall score **{best2.get('score', '')}**"
+        )
+        if best2.get("reasoning"):
+            st.write(best2["reasoning"])
+
