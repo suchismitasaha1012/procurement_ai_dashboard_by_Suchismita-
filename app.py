@@ -21,7 +21,6 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 def call_llm(prompt: str, max_tokens: int = 2800) -> str:
     """
     Call OpenAI Responses API and robustly extract the text output.
-    Works even if the SDK output structure changes slightly.
     """
     try:
         resp = client.responses.create(
@@ -77,18 +76,40 @@ def parse_json_str(raw: str):
 
 # ---------- Static Data ----------
 
+# Task 1 categories (high-level + detailed Dell procurement categories)
 PROCUREMENT_CATEGORIES = [
-    "Electronics components",
-    "Packaging",
-    "Logistics & transportation",
-    "Chemicals & materials",
-    "IT & software services",
+    # High-level categories (as in your screenshot)
+    "Electronics & Semiconductors",
+    "Packaging Materials",
+    "Logistics & Transportation",
+    "Chemicals & Materials",
+    "IT Services & Software",
+    "Hardware Components (ODM)",
+    "Cloud Computing Services",
+    "Network Equipment",
+    "Data Storage Solutions",
+    "Manufacturing Equipment",
+    "Office Supplies",
+    "Energy & Utilities",
+    # More granular Dell-specific categories you requested
+    "Laptop Components (Displays, Batteries)",
+    "Server Processors (CPUs)",
+    "Semiconductor & Microchips",
+    "Standard Cables & Connectors",
+    "Cooling Systems & Thermal Solutions",
+    "Power Supply Units",
+    "Networking Equipment (Switches, Routers)",
+    "Data Storage Devices (SSDs)",
 ]
 
+# Task 2 products / services (Dell items)
 DELL_ITEMS = [
     "Laptop Components (Displays, Batteries, Keyboards)",
     "Server Components (Processors, Memory, Storage)",
-    "Semiconductors & Microchips",
+    "Server Processors (CPUs)",
+    "Semiconductor & Microchips",
+    "Graphics Processing Units (GPUs)",
+    "Standard Cables & Connectors",
     "Printed Circuit Boards (PCBs)",
     "Cooling Systems & Thermal Solutions",
     "Power Supply Units",
@@ -96,6 +117,7 @@ DELL_ITEMS = [
     "Data Storage Devices (SSDs, HDDs)",
     "Packaging Materials",
     "Logistics & Freight Services",
+    "Green / Sustainable Materials & Packaging",
     "Cloud Infrastructure Services",
     "IT Support & Consulting",
 ]
@@ -353,10 +375,20 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("AI-Enabled Procurement Decision Support")
-st.caption(
-    "Company: **Dell Technologies** | Use case: AI-driven supplier intelligence, "
-    "contract selection, and evaluation scorecards."
+# App header
+st.markdown(
+    """
+    <div style="padding: 1.2rem 1.5rem; border-radius: 0.75rem;
+                background: linear-gradient(90deg,#0f172a,#1d4ed8,#0891b2);
+                color: white; margin-bottom: 1rem;">
+      <h2 style="margin: 0;">AI-Enabled Procurement Decision Support – Dell Technologies</h2>
+      <p style="margin: 0.3rem 0 0; font-size: 0.9rem;">
+        Use GenAI to analyse global suppliers, recommend optimal contract types, and
+        generate data-driven supplier scorecards for Dell’s hardware and services categories.
+      </p>
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 
 # Tabs for tasks
@@ -379,14 +411,38 @@ if "score2" not in st.session_state:
 # ----- Tab 1: Market Intelligence -----
 with tab1:
     st.subheader("Task 1 – Supplier Market Intelligence using GenAI")
-
-    category = st.selectbox(
-        "Select procurement category",
-        ["-- Select --"] + PROCUREMENT_CATEGORIES,
-        index=0,
+    st.info(
+        "Select any Dell procurement category – either a broad family "
+        "(e.g., *Electronics & Semiconductors*) or a specific component "
+        "(e.g., *Laptop Components (Displays, Batteries)*). The tool will "
+        "return top global suppliers and country-level sourcing risks."
     )
 
-    if st.button("Generate Supplier Intelligence", type="primary", disabled=category == "-- Select --"):
+    col1, col2 = st.columns([1.2, 1])
+
+    with col1:
+        category = st.selectbox(
+            "Select procurement category",
+            ["-- Select Category --"] + PROCUREMENT_CATEGORIES,
+            index=0,
+        )
+
+        generate_btn = st.button(
+            "🔍 Generate Intelligence",
+            type="primary",
+            use_container_width=True,
+            disabled=category == "-- Select Category --",
+        )
+
+    with col2:
+        st.markdown("**Tip**")
+        st.write(
+            "- Use granular categories (e.g., *Server Processors (CPUs)*) when "
+            "you want deeper, part-specific insights.\n"
+            "- Use broad categories for a high-level market view."
+        )
+
+    if generate_btn and category != "-- Select Category --":
         try:
             with st.spinner("Calling OpenAI and generating structured supplier insights..."):
                 st.session_state.market_json = gen_market_intel(category)
@@ -396,41 +452,63 @@ with tab1:
 
     data = st.session_state.market_json
     if data:
-        st.markdown("### Market Overview")
+        st.markdown("### 🌍 Market Overview")
         st.write(data.get("marketOverview", ""))
 
-        st.markdown("### Top Suppliers")
+        st.markdown("### 🏭 Top 5 Global Suppliers")
         for s in data.get("topSuppliers", []):
-            st.markdown(
-                f"**{s['rank']}. {s['name']}** – {s.get('headquarters','')}"
-            )
-            st.write("• Market share:", s.get("marketShare", "N/A"))
-            st.write("• Key capabilities:", ", ".join(s.get("keyCapabilities", [])))
-            st.write("• Differentiators:", s.get("differentiators", ""))
-            st.write("• Dell relevance:", s.get("dellRelevance", ""))
-            st.markdown("---")
+            with st.container():
+                st.markdown(
+                    f"**{s['rank']}. {s['name']}**  "
+                    f"<span style='color:#6b7280;'>({s.get('headquarters','')})</span>",
+                    unsafe_allow_html=True,
+                )
+                st.write("• **Market share:**", s.get("marketShare", "N/A"))
+                st.write("• **Key capabilities:**", ", ".join(s.get("keyCapabilities", [])))
+                st.write("• **Differentiators:**", s.get("differentiators", ""))
+                st.write("• **Dell relevance:**", s.get("dellRelevance", ""))
+                st.markdown("---")
 
-        st.markdown("### Country-Level Sourcing Risks")
+        st.markdown("### ⚠️ Country-Level Sourcing Risks")
         for r in data.get("countryRisks", []):
-            st.markdown(f"**{r['country']}** – Overall risk: {r.get('overallRiskLevel')}")
-            st.write("Supplier concentration:", r.get("supplierConcentration"))
-            st.write("Political risk:", r.get("politicalRisk", {}).get("assessment"))
-            st.write("Logistics risk:", r.get("logisticsRisk", {}).get("assessment"))
-            st.write("Compliance risk:", r.get("complianceRisk", {}).get("assessment"))
-            st.write("ESG risk:", r.get("esgRisk", {}).get("assessment"))
-            st.write("Mitigation:", r.get("mitigation"))
+            st.markdown(f"**{r['country']}** – Overall risk: `{r.get('overallRiskLevel')}`")
+            cols = st.columns(4)
+            cols[0].write("**Supplier concentration**")
+            cols[0].write(r.get("supplierConcentration"))
+            cols[1].write("**Political risk**")
+            cols[1].write(r.get("politicalRisk", {}).get("assessment"))
+            cols[2].write("**Logistics risk**")
+            cols[2].write(r.get("logisticsRisk", {}).get("assessment"))
+            cols[3].write("**Compliance risk**")
+            cols[3].write(r.get("complianceRisk", {}).get("assessment"))
+            st.write("**ESG risk:**", r.get("esgRisk", {}).get("assessment"))
+            st.write("**Mitigation:**", r.get("mitigation"))
             st.markdown("---")
 
 # ----- Tab 2: Contract Recommendation -----
 with tab2:
     st.subheader("Task 2 – GenAI-Supported Contract Selection for Procurement")
-
-    selected_items = st.multiselect(
-        "Select one or more Dell procurement items",
-        DELL_ITEMS,
+    st.info(
+        "Select one or more Dell items (components, logistics, or materials). "
+        "The tool recommends suitable contract types (Buy-back, Revenue-Sharing, "
+        "Wholesale Price, Quantity Flexibility, Option, VMI, Cost-Sharing) with "
+        "justification and key clauses."
     )
 
-    if st.button("Analyze Contract Options", type="primary", disabled=len(selected_items) == 0):
+    selected_items = st.multiselect(
+        "Select Dell products / services",
+        DELL_ITEMS,
+        help="You can select multiple items – the model will analyse each separately.",
+    )
+
+    analyze_btn = st.button(
+        "📄 Analyze Contract Options",
+        type="primary",
+        use_container_width=True,
+        disabled=len(selected_items) == 0,
+    )
+
+    if analyze_btn and selected_items:
         try:
             with st.spinner("Analyzing demand, risk and recommending contract types..."):
                 st.session_state.contract_json = gen_contract_analysis(selected_items)
@@ -440,30 +518,46 @@ with tab2:
 
     contract_json = st.session_state.get("contract_json")
     if contract_json:
-        st.markdown("### Contract Recommendations by Category")
+        st.markdown("### Recommended Contract Types by Category")
         for cat in contract_json.get("categories", []):
             st.markdown(f"#### {cat['name']}")
-            st.write("**Recommended contract:**", cat.get("recommendedContract"))
+            col_a, col_b = st.columns([1, 1])
+            col_a.write("**Recommended contract:**")
+            col_a.write(cat.get("recommendedContract"))
+            col_b.write("**Alternative contract:**")
+            col_b.write(cat.get("alternativeContract"))
             st.write("**Confidence:**", cat.get("confidence"))
             st.write("**Justification:**", cat.get("justification"))
-            st.write("**Alternative:**", cat.get("alternativeContract"))
             st.write("**Implementation considerations:**")
             for c in cat.get("implementationConsiderations", []):
-                st.write("-", c)
+                st.write("- ", c)
+            st.write("**Key contract clauses to focus on:**")
+            for c in cat.get("keyContractClauses", []):
+                st.write("- ", c)
             st.markdown("---")
 
-        st.markdown("### Overall Procurement Recommendations")
+        st.markdown("### Portfolio-Level Procurement Recommendations")
         for r in contract_json.get("procurementRecommendations", []):
             st.write("•", r)
 
 # ----- Tab 3: Scorecard -----
 with tab3:
     st.subheader("Task 3 – GenAI-Enhanced Supplier Evaluation Scorecard")
+    st.info(
+        "Using suppliers from Task 1, the tool builds an initial weighted scorecard "
+        "and then refines it with new weights and category-specific KPIs."
+    )
 
     if st.session_state.market_json is None:
         st.warning("Please complete **Task 1** first to identify suppliers.")
     else:
-        if st.button("Generate Supplier Scorecards", type="primary"):
+        generate_scores = st.button(
+            "🏅 Generate Supplier Scorecards",
+            type="primary",
+            use_container_width=True,
+        )
+
+        if generate_scores:
             try:
                 with st.spinner("Building initial and refined supplier scorecards..."):
                     s1, s2 = gen_scorecards(st.session_state.market_json)
@@ -480,9 +574,8 @@ with tab3:
             st.markdown("### Initial Scorecard")
             st.write(score1.get("conclusion", ""))
 
-            # Simple table of scores
             dims = [d["name"] for d in score1.get("dimensions", [])]
-            cols = ["Supplier"] + dims + ["Weighted total", "Rating"]
+            cols_header = ["Supplier"] + dims + ["Weighted total", "Rating"]
             rows = []
             for s in score1.get("supplierScores", []):
                 row = [s["supplierName"]]
@@ -491,7 +584,7 @@ with tab3:
                 row.append(s.get("weightedTotal"))
                 row.append(s.get("rating"))
                 rows.append(row)
-            st.table([cols] + rows)
+            st.table([cols_header] + rows)
 
         if score2:
             st.markdown("### Refined Scorecard (with KPIs)")
