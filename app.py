@@ -505,9 +505,7 @@ Return ONLY valid JSON (no markdown, no commentary) with EXACTLY this structure:
   "finalDecisionSummary": "2-3 sentences summarising Dell's contract selection decisions and trade-offs."
 }}
 """
-
-Only include contract types that are actually relevant.
-                """.strip()
+""".format(items=items_csv)
 
                 raw2 = call_llm(prompt2)
                 try:
