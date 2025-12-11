@@ -408,92 +408,72 @@ with tabs[1]:
 
     analyze_btn = st.button("📑 Analyze Contract Options", use_container_width=True)
 
-    if analyze_btn:
-        if not selected_products:
-            st.warning("Please select at least one procurement item.")
-        else:
-            list_str = "; ".join(selected_products)
-            with st.spinner("Calling GenAI for contract analysis…"):
-                prompt2 = f"""
-You are a supply-chain contracts specialist working for Dell's global procurement team.
+  if analyze_btn:
+    if not selected_products:
+        st.warning("Please select at least one procurement item.")
+    else:
+        items_csv = ", ".join(selected_products)
 
-For the following Dell procurement items:
-{list_str}
+        with st.spinner("Calling GenAI for contract analysis…"):
 
-Recommend suitable **supply-chain contract types** chosen only from:
-- Buy-back Contract
-- Revenue-Sharing Contract
-- Wholesale Price Contract
-- Quantity Flexibility Contract
-- Option Contract
-- Vendor-Managed Inventory (VMI)
-- Cost-Sharing / Incentive Contract
+            prompt2 = f"""
+You are a supply-chain contract expert for Dell Technologies.
 
 Evaluate the most suitable contract types for the following items: {items_csv}.
 
-Return ONLY valid JSON. Follow this exact schema:
+For each item:
+- Assess cost predictability (High / Medium / Low + 1–2 lines explanation).
+- Assess market volatility (High / Medium / Low + explanation).
+- Assess duration & volume requirements (Short/Medium/Long + Low/Medium/High volume).
+- Summarise overall risk profile.
+
+Then:
+- Recommend ONE contract type.
+- Suggest ONE alternative.
+- Compare both contract types.
+- Only include contract types that are actually relevant.
+
+Return ONLY valid JSON using this structure:
 
 {{
   "analysisDate": "{date.today()}",
   "categories": [
     {{
-      "name": "Item name exactly as provided",
+      "name": "Item name",
       "assessment": {{
         "costPredictability": {{
-          "level": "High / Medium / Low",
-          "explanation": "Why cost is or is not predictable under this contract."
+          "level": "High/Medium/Low",
+          "explanation": "text"
         }},
         "marketVolatility": {{
-          "level": "High / Medium / Low",
-          "explanation": "How volatile prices/supply are and how the contract handles it."
+          "level": "High/Medium/Low",
+          "explanation": "text"
         }},
         "durationAndVolume": {{
-          "profile": "Short / Medium / Long term; Low / Medium / High volume",
-          "explanation": "How well the contract fits the duration and volume requirements."
+          "profile": "Short/Medium/Long; Low/Medium/High",
+          "explanation": "text"
         }},
-        "riskProfile": "2-3 short phrases summarising key supply & financial risks."
+        "riskProfile": "short text"
       }},
-      "recommendedContract": "One of the allowed contract names",
-      "confidence": "High / Medium / Low",
-      "justification": "Why this contract is best overall for this item.",
-      "alternativeContract": "Another allowed contract name",
-      "comparisonSummary": "Comparison between recommended and alternative."
+      "recommendedContract": "Contract Type",
+      "confidence": "High/Medium/Low",
+      "justification": "text",
+      "alternativeContract": "Contract Type",
+      "comparisonSummary": "text"
     }}
   ],
-  "contractComparison": {{
-    "Wholesale Price Contract": {{
-      "description": "1-2 sentences.",
-      "bestFor": "When this contract structure is most appropriate.",
-      "advantages": ["Advantage 1", "Advantage 2"],
-      "disadvantages": ["Limitation 1"]
-    }},
-    "Quantity Flexibility Contract": {{
-      "description": "1-2 sentences.",
-      "bestFor": "When this works best.",
-      "advantages": ["Advantage 1", "Advantage 2"],
-      "disadvantages": ["Limitation 1"]
-    }},
-    "Vendor-Managed Inventory (VMI)": {{
-      "description": "1-2 sentences.",
-      "bestFor": "Typical use cases.",
-      "advantages": ["Advantage 1", "Advantage 2"],
-      "disadvantages": ["Limitation 1"]
-    }}
-  }},
-  "finalDecisionSummary": "2-3 sentences summarising Dell's contract selection decisions."
+  "finalDecisionSummary": "text"
 }}
 """
 
-Only include contract types that are actually relevant.
-                """.strip()
+            raw2 = call_llm(prompt2)
 
-                raw2 = call_llm(prompt2)
-                try:
-                    contract_data = parse_json_from_text(raw2)
-                    st.session_state.contract_data = contract_data
-                except Exception as e:
-                    st.error(f"Could not parse model output as JSON: {e}")
-                    st.caption(raw2)
+            try:
+                contract_data = parse_json_from_text(raw2)
+                st.session_state.contract_data = contract_data
+            except Exception as e:
+                st.error(f"Could not parse model output as JSON: {e}")
+                st.caption(raw2)
 
     contract_data = st.session_state.contract_data
     if contract_data:
